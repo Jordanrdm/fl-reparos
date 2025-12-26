@@ -1,0 +1,36 @@
+# Arquivos de configuração sensíveis
+.env
+
+# Arquivos de debug e teste
+debug_*.php
+test_*.php
+fix_*.php
+add_test_*.php
+setup_*.php
+simple_*.php
+
+# Backups e versões antigas
+*_old.php
+*_backup.php
+*_backup_old.php
+*_new.php
+*_new2.php
+*_base.php
+*_completo.php
+*_antes_refactor.php
+modules/service_orders/delete..php
+
+# Logs
+logs/
+*.log
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

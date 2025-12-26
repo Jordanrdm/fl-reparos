@@ -1,0 +1,11 @@
+# Ativar reescrita de URLs
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /flreparos/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Evitar listagem de diretórios
+Options -Indexes
