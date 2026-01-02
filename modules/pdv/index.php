@@ -1197,8 +1197,23 @@ try {
                                 <option value="pix">PIX</option>
                                 <option value="transferencia">Transferência</option>
                             </select>
-                            <input type="number" id="multiPaymentAmount" class="payment-amount-input" 
-                                   placeholder="Digite o valor..." min="0.01" step="0.01" 
+                            <select id="pdvInstallments" class="payment-method-select" style="display: none; width: auto; max-width: 120px;">
+                                <option value="1">1x</option>
+                                <option value="2">2x</option>
+                                <option value="3">3x</option>
+                                <option value="4">4x</option>
+                                <option value="5">5x</option>
+                                <option value="6">6x</option>
+                                <option value="7">7x</option>
+                                <option value="8">8x</option>
+                                <option value="9">9x</option>
+                                <option value="10">10x</option>
+                                <option value="11">11x</option>
+                                <option value="12">12x</option>
+                            </select>
+                            <span id="installmentValueDisplay" style="display: none; color: #28a745; font-weight: bold; margin-left: 10px; font-size: 14px;"></span>
+                            <input type="number" id="multiPaymentAmount" class="payment-amount-input"
+                                   placeholder="Digite o valor..." min="0.01" step="0.01"
                                    style="text-align: center !important; padding-left: 10px !important; padding-right: 10px !important;">
                         </div>
                         <div class="payment-hint">
@@ -1241,6 +1256,10 @@ try {
                 <div class="summary-row summary-total">
                     <span>TOTAL:</span>
                     <span id="total">R$ 0,00</span>
+                </div>
+                <div class="summary-row" id="changeRow" style="display: none; color: #28a745; font-weight: 600; font-size: 1.1em; margin-top: 10px; padding-top: 10px; border-top: 2px solid #e0e0e0;">
+                    <span><i class="fas fa-hand-holding-usd"></i> TROCO:</span>
+                    <span id="changeAmount">R$ 0,00</span>
                 </div>
             </div>
 
@@ -1374,8 +1393,11 @@ try {
             // Limpar todos os pagamentos
             document.getElementById('clearAllPayments').addEventListener('click', clearAllPayments);
             
-            // Auto-completar valor quando selecionar forma de pagamento
-            document.getElementById('multiPaymentMethod').addEventListener('change', autoFillAmount);
+            // Auto-completar valor e mostrar parcelas quando selecionar forma de pagamento
+            document.getElementById('multiPaymentMethod').addEventListener('change', function() {
+                togglePdvInstallments();
+                autoFillAmount();
+            });
             
             // Enter no campo de valor para adicionar
             document.getElementById('multiPaymentAmount').addEventListener('keypress', function(e) {
@@ -1386,7 +1408,13 @@ try {
             });
             
             // Atualizar display quando digitar valor
-            document.getElementById('multiPaymentAmount').addEventListener('input', updatePaymentDisplay);
+            document.getElementById('multiPaymentAmount').addEventListener('input', function() {
+                updatePaymentDisplay();
+                updateInstallmentDisplay();
+            });
+
+            // Atualizar valor da parcela quando mudar o número de parcelas
+            document.getElementById('pdvInstallments').addEventListener('change', updateInstallmentDisplay);
 
             // Desconto - removido evento input (será tratado no blur)
             // document.getElementById('discount').addEventListener('input', updateCartDisplay);
@@ -1628,16 +1656,57 @@ try {
             }
         }
 
+        function togglePdvInstallments() {
+            const methodSelect = document.getElementById('multiPaymentMethod');
+            const installmentsSelect = document.getElementById('pdvInstallments');
+            const installmentDisplay = document.getElementById('installmentValueDisplay');
+
+            if (methodSelect.value === 'cartao_credito') {
+                installmentsSelect.style.display = 'inline-block';
+                updateInstallmentDisplay();
+            } else {
+                installmentsSelect.style.display = 'none';
+                installmentDisplay.style.display = 'none';
+                installmentsSelect.value = '1';
+            }
+        }
+
+        function updateInstallmentDisplay() {
+            const amountInput = document.getElementById('multiPaymentAmount');
+            const installmentsSelect = document.getElementById('pdvInstallments');
+            const installmentDisplay = document.getElementById('installmentValueDisplay');
+            const methodSelect = document.getElementById('multiPaymentMethod');
+
+            if (methodSelect.value !== 'cartao_credito') {
+                installmentDisplay.style.display = 'none';
+                return;
+            }
+
+            const amount = parseFloat(amountInput.value);
+            const installments = parseInt(installmentsSelect.value) || 1;
+
+            if (amount > 0 && installments > 1) {
+                const installmentValue = amount / installments;
+                installmentDisplay.textContent = `${installments}x de R$ ${installmentValue.toFixed(2).replace('.', ',')}`;
+                installmentDisplay.style.display = 'inline-block';
+            } else {
+                installmentDisplay.style.display = 'none';
+            }
+        }
+
         function updatePaymentDisplay() {
             updateRemainingDisplay();
+            updateChangeDisplay();
         }
 
         function addPayment() {
             const methodSelect = document.getElementById('multiPaymentMethod');
             const amountInput = document.getElementById('multiPaymentAmount');
-            
+            const installmentsSelect = document.getElementById('pdvInstallments');
+
             const method = methodSelect.value;
             const amount = parseFloat(amountInput.value);
+            const installments = parseInt(installmentsSelect.value) || 1;
             
             // Validações
             if (!amount || amount <= 0) {
@@ -1645,23 +1714,33 @@ try {
                 amountInput.focus();
                 return;
             }
-            
+
             const remaining = getRemainingAmount();
-            if (amount > remaining + 0.01) { // Tolerância de 1 centavo
-                showAlert(`Valor maior que o restante (R$ ${remaining.toFixed(2).replace('.', ',')})!`, 'error');
-                amountInput.focus();
-                return;
+            // Validar apenas se o valor é negativo (pagar menos que zero)
+            // Permitir valor maior para dar troco
+            if (amount > remaining + 100.00 && payments.length > 0) {
+                // Avisar se estiver muito acima (possível erro de digitação)
+                const confirmed = confirm(`Você está adicionando R$ ${amount.toFixed(2).replace('.', ',')} mas o restante é R$ ${remaining.toFixed(2).replace('.', ',')}. Confirma?`);
+                if (!confirmed) {
+                    amountInput.focus();
+                    return;
+                }
             }
             
             // Adicionar pagamento
             payments.push({
                 method: method,
-                amount: amount
+                amount: amount,
+                installments: method === 'cartao_credito' ? installments : 1
             });
-            
+
             // Limpar campos
             amountInput.value = '';
-            
+            installmentsSelect.value = '1';
+            installmentsSelect.style.display = 'none';
+            document.getElementById('installmentValueDisplay').style.display = 'none';
+            methodSelect.value = 'dinheiro'; // Resetar para dinheiro após adicionar
+
             // Atualizar display
             updatePaymentsList();
             updatePaymentFormState();
@@ -1718,15 +1797,22 @@ try {
             
             listDiv.style.display = 'block';
             
-            const html = payments.map((payment, index) => `
+            const html = payments.map((payment, index) => {
+                let displayText = getPaymentMethodName(payment.method);
+                if (payment.method === 'cartao_credito' && payment.installments > 1) {
+                    const installmentValue = payment.amount / payment.installments;
+                    displayText += ` (${payment.installments}x de R$ ${installmentValue.toFixed(2).replace('.', ',')})`;
+                }
+                return `
                 <div class="payment-item payment-item-enter">
-                    <span class="payment-method-name">${getPaymentMethodName(payment.method)}</span>
+                    <span class="payment-method-name">${displayText}</span>
                     <span class="payment-amount-display">R$ ${payment.amount.toFixed(2).replace('.', ',')}</span>
                     <button class="remove-payment-btn" onclick="removePayment(${index})" title="Remover">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
-            `).join('');
+                `;
+            }).join('');
             
             container.innerHTML = html;
             
@@ -1740,17 +1826,25 @@ try {
             const remainingDiv = document.getElementById('remainingAmountDisplay');
             const remainingSpan = document.getElementById('remainingValue');
             const remaining = getRemainingAmount();
-            
+
             // Se está no modo simples ou não há pagamentos, esconder
             if (payments.length === 0 || document.getElementById('multiplePaymentMode').style.display === 'none') {
                 remainingDiv.style.display = 'none';
                 return;
             }
-            
+
+            // Se tem apenas 1 pagamento e pagou a mais (tem troco), esconder o "valor restante"
+            // porque o troco já vai aparecer abaixo
+            if (payments.length === 1 && remaining < 0) {
+                remainingDiv.style.display = 'none';
+                updateChangeDisplay();
+                return;
+            }
+
             if (payments.length > 0 || remaining < getCurrentTotal()) {
                 remainingDiv.style.display = 'block';
                 remainingSpan.textContent = remaining.toFixed(2).replace('.', ',');
-                
+
                 // Atualizar classe baseado no status
                 remainingDiv.className = 'remaining-amount-display';
                 if (Math.abs(remaining) < 0.01) {
@@ -1760,6 +1854,25 @@ try {
                 }
             } else {
                 remainingDiv.style.display = 'none';
+            }
+
+            // Atualizar troco
+            updateChangeDisplay();
+        }
+
+        function updateChangeDisplay() {
+            const changeRow = document.getElementById('changeRow');
+            const changeAmount = document.getElementById('changeAmount');
+            const totalPaid = getTotalPaid();
+            const currentTotal = getCurrentTotal();
+            const change = totalPaid - currentTotal;
+
+            // Mostrar troco apenas se o valor pago for maior que o total
+            if (change > 0.01) {
+                changeRow.style.display = 'flex';
+                changeAmount.textContent = 'R$ ' + change.toFixed(2).replace('.', ',');
+            } else {
+                changeRow.style.display = 'none';
             }
         }
 
@@ -2069,6 +2182,9 @@ try {
             document.getElementById('subtotal').textContent = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
             document.getElementById('discountDisplay').textContent = `R$ ${discount.toFixed(2).replace('.', ',')}`;
             document.getElementById('total').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
+
+            // Atualizar troco quando o total mudar
+            updateChangeDisplay();
         }
 
         function setupCustomerAutocomplete() {
@@ -2144,12 +2260,14 @@ try {
             if (payments.length > 0) {
                 // Múltiplas formas de pagamento
                 const totalPaid = getTotalPaid();
-                
-                if (Math.abs(totalPaid - total) > 0.01) {
-                    showAlert(`Valor pago (R$ ${totalPaid.toFixed(2).replace('.', ',')}) difere do total da venda!`, 'error');
+
+                // Permitir valor maior (com troco) ou exato
+                // Bloquear apenas se pago MENOS que o total
+                if (totalPaid < total - 0.01) {
+                    showAlert(`Valor pago (R$ ${totalPaid.toFixed(2).replace('.', ',')}) é menor que o total da venda!`, 'error');
                     return;
                 }
-                
+
                 finalPayments = payments;
             } else {
                 // Forma única de pagamento (modo simples)
@@ -2248,12 +2366,19 @@ try {
             const customerName = data.customerInfo ? data.customerInfo.name : 'Cliente não informado';
             
             // Gerar lista de pagamentos para o cupom
-            const paymentsHtml = data.payments.map(p => `
+            const paymentsHtml = data.payments.map(p => {
+                let paymentText = getPaymentMethodName(p.method);
+                if (p.method === 'cartao_credito' && p.installments > 1) {
+                    const installmentValue = p.amount / p.installments;
+                    paymentText += ` (${p.installments}x de R$ ${installmentValue.toFixed(2).replace('.', ',')})`;
+                }
+                return `
                 <div class="row">
-                    <span>${getPaymentMethodName(p.method)}:</span>
+                    <span>${paymentText}:</span>
                     <span>R$ ${p.amount.toFixed(2).replace('.', ',')}</span>
                 </div>
-            `).join('');
+                `;
+            }).join('');
             
             // Template do cupom
             const printContent = `

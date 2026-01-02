@@ -17,19 +17,21 @@ $conn = $database->getConnection();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
     try {
         $stmt = $conn->prepare("INSERT INTO service_orders
-            (customer_id, user_id, device, status, total_cost, entry_datetime,
+            (customer_id, user_id, device, status, total_cost, payment_method, installments, entry_datetime,
              technical_report, reported_problem, customer_observations, internal_observations,
              device_powers_on,
              checklist_case, checklist_screen_protector, checklist_camera, checklist_housing,
              checklist_lens, checklist_face_id, checklist_sim_card, checklist_battery,
              checklist_charger, checklist_headphones,
              technician_name, attendant_name)
-            VALUES (?, ?, ?, 'open', ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, 'open', ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $_POST['customer_id'],
             $_SESSION['user_id'],
             $_POST['device'],
             $_POST['total_cost'] ?? 0,
+            $_POST['payment_method'] ?? null,
+            $_POST['installments'] ?? 1,
             $_POST['technical_report'] ?? null,
             $_POST['reported_problem'] ?? null,
             $_POST['customer_observations'] ?? null,
@@ -59,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     try {
         $stmt = $conn->prepare("UPDATE service_orders
-            SET customer_id=?, device=?, status=?, total_cost=?,
+            SET customer_id=?, device=?, status=?, total_cost=?, payment_method=?, installments=?,
                 technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
                 device_powers_on=?,
                 checklist_case=?, checklist_screen_protector=?, checklist_camera=?, checklist_housing=?,
@@ -72,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['device'],
             $_POST['status'],
             $_POST['total_cost'] ?? 0,
+            $_POST['payment_method'] ?? null,
+            $_POST['installments'] ?? 1,
             $_POST['technical_report'] ?? null,
             $_POST['reported_problem'] ?? null,
             $_POST['customer_observations'] ?? null,
@@ -385,6 +389,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <td><strong><?= formatMoney($row['total_cost']) ?></strong></td>
                 <td><?= date('d/m/Y', strtotime($row['entry_datetime'])) ?></td>
                 <td>
+                    <button class="btn btn-primary btn-sm" onclick='printServiceOrder(<?= json_encode($row) ?>)' title="Imprimir">
+                        <i class="fas fa-print"></i>
+                    </button>
                     <button class="btn btn-warning btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
                         <i class="fas fa-edit"></i>
                     </button>
@@ -433,6 +440,33 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <div class="form-group">
                     <label>Valor (R$)</label>
                     <input type="number" step="0.01" name="total_cost" class="form-control" placeholder="0,00" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <select name="payment_method" id="create_payment_method" class="form-control" onchange="toggleInstallments('create')">
+                        <option value="">Selecione</option>
+                        <option value="dinheiro">Dinheiro</option>
+                        <option value="pix">PIX</option>
+                        <option value="cartao_credito">Cartão de Crédito</option>
+                        <option value="cartao_debito">Cartão de Débito</option>
+                    </select>
+                </div>
+                <div class="form-group" id="create_installments_field" style="display: none;">
+                    <label>Parcelas</label>
+                    <select name="installments" class="form-control">
+                        <option value="1">1x sem juros</option>
+                        <option value="2">2x sem juros</option>
+                        <option value="3">3x sem juros</option>
+                        <option value="4">4x sem juros</option>
+                        <option value="5">5x sem juros</option>
+                        <option value="6">6x sem juros</option>
+                        <option value="7">7x</option>
+                        <option value="8">8x</option>
+                        <option value="9">9x</option>
+                        <option value="10">10x</option>
+                        <option value="11">11x</option>
+                        <option value="12">12x</option>
+                    </select>
                 </div>
             </div>
 
@@ -578,6 +612,35 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control">
                 </div>
             </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <select name="payment_method" id="edit_payment_method" class="form-control" onchange="toggleInstallments('edit')">
+                        <option value="">Selecione</option>
+                        <option value="dinheiro">Dinheiro</option>
+                        <option value="pix">PIX</option>
+                        <option value="cartao_credito">Cartão de Crédito</option>
+                        <option value="cartao_debito">Cartão de Débito</option>
+                    </select>
+                </div>
+                <div class="form-group" id="edit_installments_field" style="display: none;">
+                    <label>Parcelas</label>
+                    <select name="installments" id="edit_installments" class="form-control">
+                        <option value="1">1x sem juros</option>
+                        <option value="2">2x sem juros</option>
+                        <option value="3">3x sem juros</option>
+                        <option value="4">4x sem juros</option>
+                        <option value="5">5x sem juros</option>
+                        <option value="6">6x sem juros</option>
+                        <option value="7">7x</option>
+                        <option value="8">8x</option>
+                        <option value="9">9x</option>
+                        <option value="10">10x</option>
+                        <option value="11">11x</option>
+                        <option value="12">12x</option>
+                    </select>
+                </div>
+            </div>
 
             <!-- Diagnóstico -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
@@ -679,6 +742,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}
 
+function toggleInstallments(mode) {
+    const paymentSelect = document.getElementById(mode + '_payment_method');
+    const installmentsField = document.getElementById(mode + '_installments_field');
+
+    if (paymentSelect.value === 'cartao_credito') {
+        installmentsField.style.display = 'block';
+    } else {
+        installmentsField.style.display = 'none';
+    }
+}
+
 function openEditModal(o){
     // Dados básicos
     document.getElementById('edit_id').value=o.id;
@@ -686,6 +760,11 @@ function openEditModal(o){
     document.getElementById('edit_device').value=o.device||'';
     document.getElementById('edit_status').value=o.status||'open';
     document.getElementById('edit_total_cost').value=o.total_cost||'';
+    document.getElementById('edit_payment_method').value=o.payment_method||'';
+    document.getElementById('edit_installments').value=o.installments||1;
+
+    // Mostrar campo de parcelas se for cartão de crédito
+    toggleInstallments('edit');
 
     // Diagnóstico
     document.getElementById('edit_reported_problem').value=o.reported_problem||'';
@@ -713,6 +792,329 @@ function openEditModal(o){
     document.getElementById('edit_attendant_name').value=o.attendant_name||'';
 
     openModal('editModal');
+}
+
+function printServiceOrder(order) {
+    // Buscar dados do cliente
+    const customerId = order.customer_id;
+
+    fetch(`../../modules/customers/get_customer.php?id=${customerId}`)
+        .then(response => response.json())
+        .then(customer => {
+            generateServiceOrderPrint(order, customer);
+        })
+        .catch(error => {
+            console.error('Erro ao buscar cliente:', error);
+            alert('Erro ao carregar dados do cliente');
+        });
+}
+
+function generateServiceOrderPrint(order, customer) {
+    const printWindow = window.open('', '_blank');
+
+    // Traduzir status
+    const statusMap = {
+        'open': 'Aguardando',
+        'in_progress': 'Em Andamento',
+        'completed': 'Concluído',
+        'delivered': 'Entregue',
+        'cancelled': 'Cancelado'
+    };
+
+    // Traduzir forma de pagamento
+    const paymentMap = {
+        'dinheiro': 'Dinheiro',
+        'pix': 'PIX',
+        'cartao_credito': 'Cartão de Crédito',
+        'cartao_debito': 'Cartão de Débito'
+    };
+
+    // Formatar valor
+    const totalFormatted = new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(order.total_cost || 0);
+
+    // Formatar data
+    const dateFormatted = new Date(order.entry_datetime).toLocaleDateString('pt-BR');
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ordem de Serviço #${order.id}</title>
+    <style>
+        @media print {
+            @page { margin: 20mm; }
+            body { margin: 0; }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        .logo i {
+            margin-right: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        .os-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 20px 0 10px;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section-title {
+            background: #667eea;
+            color: white;
+            padding: 8px 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            padding: 10px;
+            background: #f5f5f5;
+            border-left: 3px solid #667eea;
+        }
+        .info-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+        .info-value {
+            font-size: 14px;
+            color: #333;
+            font-weight: 600;
+        }
+        .checklist {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .checklist-item {
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        .checklist-item i {
+            margin-right: 8px;
+            color: #28a745;
+        }
+        .text-area {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 4px;
+            min-height: 80px;
+            margin-top: 8px;
+            white-space: pre-wrap;
+        }
+        .signature-area {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 2px dashed #ccc;
+        }
+        .signature-line {
+            border-top: 1px solid #333;
+            margin: 40px 20px 5px;
+            padding-top: 5px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #667eea;
+            color: #666;
+            font-size: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-open { background: #ffc107; color: #000; }
+        .status-in_progress { background: #17a2b8; color: white; }
+        .status-completed { background: #28a745; color: white; }
+        .status-delivered { background: #6c757d; color: white; }
+        .status-cancelled { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <i class="fas fa-mobile-alt"></i> FL REPAROS
+        </div>
+        <div class="subtitle">Sistema de Gestão para Assistência Técnica</div>
+        <div class="os-number">OS #${order.id}</div>
+        <span class="status-badge status-${order.status}">${statusMap[order.status] || order.status}</span>
+    </div>
+
+    <div class="section">
+        <div class="section-title"><i class="fas fa-user"></i> Dados do Cliente</div>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Nome</div>
+                <div class="info-value">${customer.name || '-'}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Telefone</div>
+                <div class="info-value">${customer.phone || '-'}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Email</div>
+                <div class="info-value">${customer.email || '-'}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Endereço</div>
+                <div class="info-value">${customer.address || '-'}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title"><i class="fas fa-mobile-alt"></i> Dados do Equipamento</div>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Aparelho</div>
+                <div class="info-value">${order.device || '-'}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Data de Entrada</div>
+                <div class="info-value">${dateFormatted}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">O Aparelho Liga?</div>
+                <div class="info-value">${order.device_powers_on === 'sim' ? 'Sim' : 'Não'}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Valor do Serviço</div>
+                <div class="info-value" style="color: #28a745;">${totalFormatted}</div>
+            </div>
+            ${order.payment_method ? `
+            <div class="info-item">
+                <div class="info-label">Forma de Pagamento</div>
+                <div class="info-value">${paymentMap[order.payment_method] || order.payment_method}${order.payment_method === 'cartao_credito' && order.installments > 1 ? ' - ' + order.installments + 'x de R$ ' + (order.total_cost / order.installments).toFixed(2).replace('.', ',') : ''}</div>
+            </div>
+            ` : ''}
+        </div>
+    </div>
+
+    ${order.reported_problem ? `
+    <div class="section">
+        <div class="section-title"><i class="fas fa-exclamation-circle"></i> Problema Relatado</div>
+        <div class="text-area">${order.reported_problem}</div>
+    </div>
+    ` : ''}
+
+    ${order.technical_report ? `
+    <div class="section">
+        <div class="section-title"><i class="fas fa-wrench"></i> Laudo Técnico</div>
+        <div class="text-area">${order.technical_report}</div>
+    </div>
+    ` : ''}
+
+    <div class="section">
+        <div class="section-title"><i class="fas fa-clipboard-check"></i> Checklist do Aparelho</div>
+        <div class="checklist">
+            ${order.checklist_case ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Capa</div>' : ''}
+            ${order.checklist_screen_protector ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Película</div>' : ''}
+            ${order.checklist_camera ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Câmera</div>' : ''}
+            ${order.checklist_housing ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Carcaça</div>' : ''}
+            ${order.checklist_lens ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Lente</div>' : ''}
+            ${order.checklist_face_id ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Face ID</div>' : ''}
+            ${order.checklist_sim_card ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Chip</div>' : ''}
+            ${order.checklist_battery ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Bateria</div>' : ''}
+            ${order.checklist_charger ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Carregador</div>' : ''}
+            ${order.checklist_headphones ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Fone</div>' : ''}
+        </div>
+    </div>
+
+    ${order.customer_observations ? `
+    <div class="section">
+        <div class="section-title"><i class="fas fa-comment-alt"></i> Observações para o Cliente</div>
+        <div class="text-area">${order.customer_observations}</div>
+    </div>
+    ` : ''}
+
+    ${order.technician_name || order.attendant_name ? `
+    <div class="section">
+        <div class="section-title"><i class="fas fa-users"></i> Responsáveis</div>
+        <div class="info-grid">
+            ${order.technician_name ? `
+            <div class="info-item">
+                <div class="info-label">Técnico Responsável</div>
+                <div class="info-value">${order.technician_name}</div>
+            </div>
+            ` : ''}
+            ${order.attendant_name ? `
+            <div class="info-item">
+                <div class="info-label">Atendente Responsável</div>
+                <div class="info-value">${order.attendant_name}</div>
+            </div>
+            ` : ''}
+        </div>
+    </div>
+    ` : ''}
+
+    <div class="signature-area">
+        <div class="signature-line">
+            Assinatura do Cliente
+        </div>
+    </div>
+
+    <div class="footer">
+        <p><strong>FL REPAROS</strong> - Sistema de Gestão para Assistência Técnica</p>
+        <p>Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</body>
+</html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+
+    // Aguardar carregar e imprimir
+    printWindow.onload = function() {
+        setTimeout(() => {
+            printWindow.print();
+        }, 250);
+    };
 }
 
 // Fechar modal ao clicar fora

@@ -1,3 +1,4 @@
+
 # 📋 GUIA RÁPIDO DE INSTALAÇÃO - FL REPAROS
 
 ## ⚡ Instalação em 5 Passos Simples
