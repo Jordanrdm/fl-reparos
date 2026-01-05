@@ -116,7 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 $payments = json_decode($_POST['payments'], true);
                 $total_amount = (float)$_POST['total_amount'];
                 $final_amount = (float)$_POST['final_amount'];
-                
+                $change_amount = (float)($_POST['change_amount'] ?? 0);
+
                 // Preparar descrição dos pagamentos para o banco
                 $payment_description = '';
                 if (count($payments) > 1) {
@@ -127,51 +128,83 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 } else {
                     $payment_description = getPaymentMethodName($payments[0]['method']);
                 }
-                
+
                 // Inserir venda
                 $stmt = $pdo->prepare("
-                    INSERT INTO sales (customer_id, user_id, total_amount, discount, final_amount, payment_method, status, created_at) 
+                    INSERT INTO sales (customer_id, user_id, total_amount, discount, final_amount, payment_method, status, created_at)
                     VALUES (NULL, ?, ?, ?, ?, ?, 'completed', NOW())
                 ");
                 $stmt->execute([$_SESSION['user_id'], $total_amount, $discount, $final_amount, $payment_description]);
                 $sale_id = $pdo->lastInsertId();
-                
+
                 // Inserir itens da venda e atualizar estoque
                 foreach ($items as $item) {
                     // Inserir item
                     $stmt = $pdo->prepare("
-                        INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, total_price) 
+                        INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, total_price)
                         VALUES (?, ?, ?, ?, ?)
                     ");
                     $stmt->execute([
-                        $sale_id, 
-                        $item['id'], 
-                        $item['quantity'], 
-                        $item['price'], 
+                        $sale_id,
+                        $item['id'],
+                        $item['quantity'],
+                        $item['price'],
                         $item['total']
                     ]);
-                    
+
                     // Atualizar estoque
                     $stmt = $pdo->prepare("
-                        UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = NOW() 
+                        UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = NOW()
                         WHERE id = ?
                     ");
                     $stmt->execute([$item['quantity'], $item['id']]);
                 }
-                
+
                 // Registrar no fluxo de caixa
                 $customer_info = $customer_name ? " - Cliente: $customer_name" : "";
-                $stmt = $pdo->prepare("
-                    INSERT INTO cash_flow (user_id, type, description, amount, reference_id, reference_type, created_at) 
-                    VALUES (?, 'entry', ?, ?, ?, 'sale', NOW())
-                ");
-                $stmt->execute([
-                    $_SESSION['user_id'], 
-                    "Venda #$sale_id - $payment_description$customer_info", 
-                    $final_amount, 
-                    $sale_id
-                ]);
-                
+                $description = "Venda #$sale_id - $payment_description$customer_info";
+
+                // Se tem troco, registrar valor recebido e troco separadamente
+                if ($change_amount > 0) {
+                    $valor_recebido = $final_amount + $change_amount;
+
+                    // ENTRADA: Valor recebido do cliente
+                    $stmt = $pdo->prepare("
+                        INSERT INTO cash_flow (user_id, type, description, amount, reference_id, reference_type, created_at)
+                        VALUES (?, 'sale', ?, ?, ?, 'sale', NOW())
+                    ");
+                    $stmt->execute([
+                        $_SESSION['user_id'],
+                        $description . " - Valor Recebido",
+                        $valor_recebido,
+                        $sale_id
+                    ]);
+
+                    // SAÍDA: Troco devolvido
+                    $stmt = $pdo->prepare("
+                        INSERT INTO cash_flow (user_id, type, description, amount, reference_id, reference_type, created_at)
+                        VALUES (?, 'expense', ?, ?, ?, 'sale_change', NOW())
+                    ");
+                    $stmt->execute([
+                        $_SESSION['user_id'],
+                        $description . " - Troco",
+                        $change_amount,
+                        $sale_id
+                    ]);
+                } else {
+                    // Sem troco, registra valor total normalmente
+                    $stmt = $pdo->prepare("
+                        INSERT INTO cash_flow (user_id, type, description, amount, reference_id, reference_type, created_at)
+                        VALUES (?, 'sale', ?, ?, ?, 'sale', NOW())
+                    ");
+                    $stmt->execute([
+                        $_SESSION['user_id'],
+                        $description,
+                        $final_amount,
+                        $sale_id
+                    ]);
+                }
+
                 $pdo->commit();
                 echo json_encode(['success' => true, 'sale_id' => $sale_id]);
                 
@@ -331,17 +364,24 @@ try {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             border-radius: 15px;
-            padding: 20px;
+            padding: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
             display: flex;
             flex-direction: column;
+            max-height: calc(100vh - 30px);
+            overflow-y: auto;
         }
 
         .cart-header {
             text-align: center;
-            padding-bottom: 15px;
+            padding-bottom: 8px;
             border-bottom: 2px solid #e0e0e0;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
+        }
+
+        .cart-header h2 {
+            font-size: 18px;
+            margin: 0;
         }
 
         .cart-items {
@@ -408,38 +448,41 @@ try {
 
         .cart-summary {
             border-top: 2px solid #e0e0e0;
-            padding-top: 15px;
+            padding-top: 8px;
+            margin-top: 8px;
         }
 
         .summary-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 16px;
+            margin-bottom: 4px;
+            font-size: 14px;
         }
 
         .summary-total {
             font-weight: bold;
-            font-size: 18px;
+            font-size: 16px;
             color: #4CAF50;
             border-top: 1px solid #e0e0e0;
-            padding-top: 8px;
+            padding-top: 6px;
+            margin-top: 4px;
         }
 
         .form-group {
-            margin-bottom: 12px;
+            margin-bottom: 6px;
         }
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
+            font-size: 14px;
             color: #333;
             font-weight: 500;
         }
 
         .form-control {
             width: 100%;
-            padding: 8px;
+            padding: 6px 8px;
             border: 2px solid #e0e0e0;
             border-radius: 5px;
             font-size: 14px;
@@ -478,9 +521,10 @@ try {
         .btn-success {
             background: linear-gradient(45deg, #FF9800, #F57C00);
             color: white;
-            font-size: 16px;
-            padding: 12px 24px;
+            font-size: 15px;
+            padding: 8px 16px;
             width: 100%;
+            margin-top: 8px;
         }
 
         .btn:hover {
@@ -598,7 +642,7 @@ try {
         .payment-form {
             background: #f8f9fa;
             border-radius: 10px;
-            padding: 15px;
+            padding: 10px;
             border: 2px solid #e0e0e0;
             transition: all 0.3s ease;
             width: 100%;
@@ -614,13 +658,15 @@ try {
         /* Input de adicionar pagamento */
         .payment-input-row {
             display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
+            gap: 6px;
+            margin-bottom: 6px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
         .payment-method-select {
             flex: 2;
-            padding: 10px;
+            padding: 6px 8px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             background: white;
@@ -630,7 +676,8 @@ try {
 
         .payment-amount-input {
             flex: 1;
-            padding: 10px;
+            min-width: 100px;
+            padding: 6px 8px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             text-align: right;
@@ -669,17 +716,26 @@ try {
             transform: none;
         }
 
+        /* Dica de pagamento */
+        .payment-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+            margin-bottom: 4px;
+        }
+
         /* Lista de pagamentos adicionados */
         .payments-list {
-            margin-top: 15px;
+            margin-top: 8px;
+            margin-bottom: 8px;
         }
 
         .payments-list-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
+            margin-bottom: 6px;
+            padding-bottom: 6px;
             border-bottom: 1px solid #ddd;
         }
 
@@ -713,10 +769,10 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 12px;
+            padding: 6px 10px;
             background: white;
-            border-radius: 8px;
-            margin-bottom: 6px;
+            border-radius: 6px;
+            margin-bottom: 4px;
             border: 1px solid #e0e0e0;
             transition: all 0.3s ease;
         }
@@ -729,13 +785,13 @@ try {
         .payment-method-name {
             font-weight: 600;
             color: #333;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .payment-amount-display {
             color: #4CAF50;
             font-weight: bold;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .remove-payment-btn {
@@ -760,27 +816,27 @@ try {
 
         /* Total pago */
         .total-paid-display {
-            margin-top: 10px;
-            padding-top: 10px;
+            margin-top: 6px;
+            padding-top: 6px;
             border-top: 2px solid #4CAF50;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-weight: bold;
             color: #4CAF50;
-            font-size: 14px;
+            font-size: 13px;
         }
 
         /* Valor restante */
         .remaining-amount-display {
             background: #fff3cd;
             color: #856404;
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 6px;
             text-align: center;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             font-weight: bold;
-            font-size: 13px;
+            font-size: 12px;
             border: 1px solid #ffeaa7;
         }
 
@@ -1160,7 +1216,7 @@ try {
                        placeholder="0" min="0" max="100" step="0.1"
                        onfocus="if(this.value=='0') this.value=''"
                        onblur="handleDiscountChange()">
-                <small style="color: #666; display: block; margin-top: 5px;">
+                <small style="color: #666; display: block; margin-top: 2px; font-size: 11px;">
                     <i class="fas fa-info-circle"></i> Desconto acima de 5% requer senha de gerente/admin
                 </small>
             </div>
@@ -1180,9 +1236,9 @@ try {
                                 <option value="pix">PIX</option>
                                 <option value="transferencia">Transferência</option>
                             </select>
-                            <button type="button" id="addAnotherPaymentBtn" class="add-payment-btn-simple" 
-                                    style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); color: #667eea; border: 2px solid rgba(102, 126, 234, 0.3); padding: 12px 18px; border-radius: 15px; font-size: 14px; font-weight: 500; min-width: 150px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); transition: all 0.3s ease;">
-                                <i class="fas fa-plus"></i> Adicionar outra forma
+                            <button type="button" id="addAnotherPaymentBtn" class="add-payment-btn-simple"
+                                    style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); color: #667eea; border: 2px solid rgba(102, 126, 234, 0.3); padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; min-width: 130px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); transition: all 0.3s ease;">
+                                <i class="fas fa-plus"></i> Adicionar outra
                             </button>
                         </div>
                     </div>
@@ -1197,7 +1253,7 @@ try {
                                 <option value="pix">PIX</option>
                                 <option value="transferencia">Transferência</option>
                             </select>
-                            <select id="pdvInstallments" class="payment-method-select" style="display: none; width: auto; max-width: 120px;">
+                            <select id="pdvInstallments" class="payment-method-select" style="display: none; width: auto; max-width: 80px; flex: none;">
                                 <option value="1">1x</option>
                                 <option value="2">2x</option>
                                 <option value="3">3x</option>
@@ -1211,10 +1267,10 @@ try {
                                 <option value="11">11x</option>
                                 <option value="12">12x</option>
                             </select>
-                            <span id="installmentValueDisplay" style="display: none; color: #28a745; font-weight: bold; margin-left: 10px; font-size: 14px;"></span>
                             <input type="number" id="multiPaymentAmount" class="payment-amount-input"
                                    placeholder="Digite o valor..." min="0.01" step="0.01"
-                                   style="text-align: center !important; padding-left: 10px !important; padding-right: 10px !important;">
+                                   style="text-align: center !important; padding: 6px 8px !important;">
+                            <span id="installmentValueDisplay" style="display: none; color: #28a745; font-weight: 600; font-size: 12px; white-space: nowrap;"></span>
                         </div>
                         <div class="payment-hint">
                             <span class="blinking-bulb">💡</span> Digite o valor da forma de pagamento e pressione <kbd>Enter</kbd>
@@ -2279,8 +2335,12 @@ try {
             }
 
             const confirmed = await showConfirmDialog('Finalizar Venda', `Confirma a venda de R$ ${total.toFixed(2).replace('.', ',')}?`, 'Finalizar', 'Cancelar');
-            
+
             if (confirmed) {
+                // Calcular troco se houver
+                const totalPaid = finalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+                const changeAmount = Math.max(0, totalPaid - total);
+
                 const formData = new FormData();
                 formData.append('action', 'finalize_sale');
                 formData.append('items', JSON.stringify(cart));
@@ -2289,6 +2349,7 @@ try {
                 formData.append('payments', JSON.stringify(finalPayments));
                 formData.append('total_amount', subtotal);
                 formData.append('final_amount', total);
+                formData.append('change_amount', changeAmount);
 
                 // Desabilitar botão
                 document.getElementById('finalizeSale').disabled = true;
@@ -2301,7 +2362,14 @@ try {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        showPrintModal(data.sale_id, subtotal, discount, total, finalPayments, customerId);
+                        try {
+                            showPrintModal(data.sale_id, subtotal, discount, total, finalPayments, customerId, cart);
+                        } catch (error) {
+                            console.error('Erro ao abrir modal:', error);
+                            // Se falhar ao abrir modal, limpar carrinho diretamente
+                            resetSale();
+                            showAlert('✅ Venda finalizada com sucesso! (ID: ' + data.sale_id + ')', 'success');
+                        }
                     } else {
                         throw new Error(data.error || 'Erro desconhecido');
                     }
@@ -2318,18 +2386,28 @@ try {
             }
         }
 
-        function showPrintModal(saleId, subtotal, discount, total, finalPayments, customerId) {
+        function showPrintModal(saleId, subtotal, discount, total, finalPayments, customerId, cartItems) {
+            // Verificar se elementos do modal existem
+            const modalSaleId = document.getElementById('modalSaleId');
+            const modalSummary = document.getElementById('modalSaleSummary');
+            const printModal = document.getElementById('printModal');
+
+            if (!modalSaleId || !modalSummary || !printModal) {
+                console.error('Elementos do modal não encontrados');
+                throw new Error('Modal de impressão não encontrado');
+            }
+
             // Preencher dados do modal
-            document.getElementById('modalSaleId').textContent = saleId;
-            
-            const customerInfo = customerId ? 
+            modalSaleId.textContent = saleId;
+
+            const customerInfo = customerId ?
                 customers.find(c => c.id == customerId) : null;
-            
+
             // Gerar lista de pagamentos para exibir
-            const paymentsText = finalPayments.map(p => 
+            const paymentsText = finalPayments.map(p =>
                 `${getPaymentMethodName(p.method)}: R$ ${p.amount.toFixed(2).replace('.', ',')}`
             ).join('<br>');
-            
+
             const summaryHTML = `
                 ${customerInfo ? `<div class="sale-summary-row"><span>Cliente:</span><span>${customerInfo.name}</span></div>` : ''}
                 <div class="sale-summary-row"><span>Forma(s) de Pagamento:</span><span>${paymentsText}</span></div>
@@ -2337,10 +2415,10 @@ try {
                 <div class="sale-summary-row"><span>Desconto:</span><span>R$ ${discount.toFixed(2).replace('.', ',')}</span></div>
                 <div class="sale-summary-row sale-summary-total"><span>TOTAL:</span><span>R$ ${total.toFixed(2).replace('.', ',')}</span></div>
             `;
-            
-            document.getElementById('modalSaleSummary').innerHTML = summaryHTML;
-            
-            // Armazenar dados para impressão
+
+            modalSummary.innerHTML = summaryHTML;
+
+            // Armazenar dados para impressão (usar cartItems passado como parâmetro)
             window.currentSaleData = {
                 saleId,
                 subtotal,
@@ -2348,11 +2426,16 @@ try {
                 total,
                 payments: finalPayments,
                 customerInfo,
-                items: cart
+                items: cartItems || []
             };
-            
+
             // Mostrar modal
-            document.getElementById('printModal').style.display = 'block';
+            printModal.style.display = 'block';
+
+            // Limpar carrinho imediatamente após abrir modal (venda já foi salva)
+            setTimeout(() => {
+                resetSale();
+            }, 500);
         }
 
         function printReceipt() {
@@ -2506,8 +2589,8 @@ try {
 
         function closePrintModal() {
             document.getElementById('printModal').style.display = 'none';
-            
-            // Resetar IMEDIATAMENTE após fechar o modal
+
+            // Limpar carrinho e resetar PDV
             setTimeout(() => {
                 resetSale();
                 showAlert('✅ Nova venda iniciada! PDV limpo e pronto.', 'success');
@@ -2519,35 +2602,83 @@ try {
             cart = [];
             payments = [];
 
-            // Limpar campos do formulário
-            document.getElementById('customerSearch').value = '';
-            document.getElementById('customerId').value = '';
-            document.getElementById('discountPercent').value = '0';
-            document.getElementById('mainPaymentMethod').value = 'dinheiro';
-            document.getElementById('multiPaymentAmount').value = '';
+            // Limpar campos do formulário (com verificação de null)
+            const customerSearch = document.getElementById('customerSearch');
+            const customerId = document.getElementById('customerId');
+            const discountPercent = document.getElementById('discountPercent');
+            const mainPaymentMethod = document.getElementById('mainPaymentMethod');
+            const multiPaymentAmount = document.getElementById('multiPaymentAmount');
+            const productSearch = document.getElementById('productSearch');
+            const finalizeSale = document.getElementById('finalizeSale');
+
+            if (customerSearch) customerSearch.value = '';
+            if (customerId) customerId.value = '';
+            if (discountPercent) discountPercent.value = '0';
+            if (mainPaymentMethod) mainPaymentMethod.value = 'dinheiro';
+            if (multiPaymentAmount) multiPaymentAmount.value = '';
+
             selectedCustomer = null;
 
             // Resetar controle de desconto
             discountAuthorized = false;
             lastValidDiscount = 0;
-            
-            // Voltar ao modo simples
-            switchToSimpleMode();
-            
-            // Atualizar todas as exibições
-            updateCartDisplay();
-            updatePaymentsList();
-            updatePaymentFormState();
-            
+
+            // Voltar ao modo simples (com proteção contra erro)
+            try {
+                if (typeof switchToSimpleMode === 'function') {
+                    switchToSimpleMode();
+                }
+            } catch (e) {
+                console.error('Erro em switchToSimpleMode:', e);
+            }
+
+            // Atualizar todas as exibições (com proteção contra erro)
+            try {
+                if (typeof updateCartDisplay === 'function') {
+                    updateCartDisplay();
+                }
+            } catch (e) {
+                console.error('Erro em updateCartDisplay:', e);
+            }
+
+            try {
+                if (typeof updatePaymentsList === 'function') {
+                    updatePaymentsList();
+                }
+            } catch (e) {
+                console.error('Erro em updatePaymentsList:', e);
+            }
+
+            try {
+                if (typeof updatePaymentFormState === 'function') {
+                    updatePaymentFormState();
+                }
+            } catch (e) {
+                console.error('Erro em updatePaymentFormState:', e);
+            }
+
             // Limpar busca de produtos e recarregar lista
-            document.getElementById('productSearch').value = '';
-            loadAllProducts();
-            
+            if (productSearch) {
+                productSearch.value = '';
+            }
+
+            try {
+                if (typeof loadAllProducts === 'function') {
+                    loadAllProducts();
+                }
+            } catch (e) {
+                console.error('Erro em loadAllProducts:', e);
+            }
+
             // Focar no campo de busca
-            document.getElementById('productSearch').focus();
-            
+            if (productSearch) {
+                productSearch.focus();
+            }
+
             // Garantir que botão finalizar está desabilitado
-            document.getElementById('finalizeSale').disabled = true;
+            if (finalizeSale) {
+                finalizeSale.disabled = true;
+            }
         }
 
         function showAlert(message, type) {

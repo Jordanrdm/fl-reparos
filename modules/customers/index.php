@@ -243,6 +243,7 @@ textarea.form-control {
         <h1><i class="fas fa-address-book"></i> Clientes</h1>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="openModal('createModal')"><i class="fas fa-plus"></i> Novo Cliente</button>
+            <a href="import.php" class="btn" style="background:#28a745;color:white;"><i class="fas fa-file-excel"></i> Importar Planilha</a>
             <a href="../../index.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
     </div>

@@ -17,14 +17,14 @@ $conn = $database->getConnection();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
     try {
         $stmt = $conn->prepare("INSERT INTO service_orders
-            (customer_id, user_id, device, status, total_cost, payment_method, installments, entry_datetime,
+            (customer_id, user_id, device, status, total_cost, payment_method, installments, change_amount, entry_datetime,
              technical_report, reported_problem, customer_observations, internal_observations,
              device_powers_on,
              checklist_case, checklist_screen_protector, checklist_camera, checklist_housing,
              checklist_lens, checklist_face_id, checklist_sim_card, checklist_battery,
              checklist_charger, checklist_headphones,
-             technician_name, attendant_name)
-            VALUES (?, ?, ?, 'open', ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+             technician_name, attendant_name, warranty_period)
+            VALUES (?, ?, ?, 'open', ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $_POST['customer_id'],
             $_SESSION['user_id'],
@@ -32,50 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['total_cost'] ?? 0,
             $_POST['payment_method'] ?? null,
             $_POST['installments'] ?? 1,
-            $_POST['technical_report'] ?? null,
-            $_POST['reported_problem'] ?? null,
-            $_POST['customer_observations'] ?? null,
-            $_POST['internal_observations'] ?? null,
-            $_POST['device_powers_on'] ?? 'sim',
-            isset($_POST['checklist_case']) ? 1 : 0,
-            isset($_POST['checklist_screen_protector']) ? 1 : 0,
-            isset($_POST['checklist_camera']) ? 1 : 0,
-            isset($_POST['checklist_housing']) ? 1 : 0,
-            isset($_POST['checklist_lens']) ? 1 : 0,
-            isset($_POST['checklist_face_id']) ? 1 : 0,
-            isset($_POST['checklist_sim_card']) ? 1 : 0,
-            isset($_POST['checklist_battery']) ? 1 : 0,
-            isset($_POST['checklist_charger']) ? 1 : 0,
-            isset($_POST['checklist_headphones']) ? 1 : 0,
-            $_POST['technician_name'] ?? null,
-            $_POST['attendant_name'] ?? null
-        ]);
-        echo "<script>alert('Ordem de serviço criada com sucesso!');window.location='index.php';</script>";
-        exit;
-    } catch (PDOException $e) {
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
-    }
-}
-
-// Editar OS
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
-    try {
-        $stmt = $conn->prepare("UPDATE service_orders
-            SET customer_id=?, device=?, status=?, total_cost=?, payment_method=?, installments=?,
-                technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
-                device_powers_on=?,
-                checklist_case=?, checklist_screen_protector=?, checklist_camera=?, checklist_housing=?,
-                checklist_lens=?, checklist_face_id=?, checklist_sim_card=?, checklist_battery=?,
-                checklist_charger=?, checklist_headphones=?,
-                technician_name=?, attendant_name=?
-            WHERE id=?");
-        $stmt->execute([
-            $_POST['customer_id'],
-            $_POST['device'],
-            $_POST['status'],
-            $_POST['total_cost'] ?? 0,
-            $_POST['payment_method'] ?? null,
-            $_POST['installments'] ?? 1,
+            $_POST['change_amount'] ?? 0,
             $_POST['technical_report'] ?? null,
             $_POST['reported_problem'] ?? null,
             $_POST['customer_observations'] ?? null,
@@ -93,8 +50,211 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             isset($_POST['checklist_headphones']) ? 1 : 0,
             $_POST['technician_name'] ?? null,
             $_POST['attendant_name'] ?? null,
+            $_POST['warranty_period'] ?? '90 dias'
+        ]);
+
+        // Pegar ID da OS criada
+        $osId = $conn->lastInsertId();
+
+        // Salvar produtos utilizados (se houver)
+        if (!empty($_POST['products_data'])) {
+            $productsData = json_decode($_POST['products_data'], true);
+
+            if (is_array($productsData) && count($productsData) > 0) {
+                $stmtProduct = $conn->prepare("INSERT INTO service_order_items
+                    (service_order_id, product_id, quantity, price, subtotal)
+                    VALUES (?, ?, ?, ?, ?)");
+
+                $stmtUpdateStock = $conn->prepare("UPDATE products
+                    SET stock_quantity = stock_quantity - ?
+                    WHERE id = ?");
+
+                foreach ($productsData as $product) {
+                    // Inserir item
+                    $stmtProduct->execute([
+                        $osId,
+                        $product['id'],
+                        $product['quantity'],
+                        $product['price'],
+                        $product['subtotal']
+                    ]);
+
+                    // Atualizar estoque
+                    $stmtUpdateStock->execute([
+                        $product['quantity'],
+                        $product['id']
+                    ]);
+                }
+            }
+        }
+
+        echo "<script>alert('Ordem de serviço criada com sucesso!');window.location='index.php';</script>";
+        exit;
+    } catch (PDOException $e) {
+        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+    }
+}
+
+// Editar OS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
+    try {
+        // Buscar status anterior da OS
+        $stmtOld = $conn->prepare("SELECT status, total_cost, payment_method FROM service_orders WHERE id = ?");
+        $stmtOld->execute([$_POST['id']]);
+        $oldOrder = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+        // Bloquear edição se a OS já foi entregue
+        if ($oldOrder['status'] === 'delivered') {
+            echo "<script>alert('⚠️ Ordem de Serviço já foi ENTREGUE e não pode mais ser editada!');window.location='index.php';</script>";
+            exit;
+        }
+
+        $stmt = $conn->prepare("UPDATE service_orders
+            SET customer_id=?, device=?, status=?, total_cost=?, payment_method=?, installments=?, change_amount=?,
+                technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
+                device_powers_on=?,
+                checklist_case=?, checklist_screen_protector=?, checklist_camera=?, checklist_housing=?,
+                checklist_lens=?, checklist_face_id=?, checklist_sim_card=?, checklist_battery=?,
+                checklist_charger=?, checklist_headphones=?,
+                technician_name=?, attendant_name=?, warranty_period=?
+            WHERE id=?");
+        $stmt->execute([
+            $_POST['customer_id'],
+            $_POST['device'],
+            $_POST['status'],
+            $_POST['total_cost'] ?? 0,
+            $_POST['payment_method'] ?? null,
+            $_POST['installments'] ?? 1,
+            $_POST['change_amount'] ?? 0,
+            $_POST['technical_report'] ?? null,
+            $_POST['reported_problem'] ?? null,
+            $_POST['customer_observations'] ?? null,
+            $_POST['internal_observations'] ?? null,
+            $_POST['device_powers_on'] ?? 'sim',
+            isset($_POST['checklist_case']) ? 1 : 0,
+            isset($_POST['checklist_screen_protector']) ? 1 : 0,
+            isset($_POST['checklist_camera']) ? 1 : 0,
+            isset($_POST['checklist_housing']) ? 1 : 0,
+            isset($_POST['checklist_lens']) ? 1 : 0,
+            isset($_POST['checklist_face_id']) ? 1 : 0,
+            isset($_POST['checklist_sim_card']) ? 1 : 0,
+            isset($_POST['checklist_battery']) ? 1 : 0,
+            isset($_POST['checklist_charger']) ? 1 : 0,
+            isset($_POST['checklist_headphones']) ? 1 : 0,
+            $_POST['technician_name'] ?? null,
+            $_POST['attendant_name'] ?? null,
+            $_POST['warranty_period'] ?? '90 dias',
             $_POST['id']
         ]);
+
+        // Se status mudou para "delivered" (Entregue), registrar no caixa
+        if ($oldOrder['status'] !== 'delivered' && $_POST['status'] === 'delivered') {
+            $totalCost = $_POST['total_cost'] ?? 0;
+            $paymentMethod = $_POST['payment_method'] ?? 'dinheiro';
+            $changeAmount = $_POST['change_amount'] ?? 0;
+
+            // Só registra no caixa se tiver valor maior que zero
+            if ($totalCost > 0) {
+                // VERIFICAR SE JÁ EXISTE REGISTRO NO CAIXA PARA ESSA O.S.
+                // (evita duplicação quando O.S. é reaberta e fechada novamente)
+                $stmtCheck = $conn->prepare("SELECT COUNT(*) as total FROM cash_flow
+                    WHERE reference_id = ? AND reference_type IN ('service_order', 'service_order_change')");
+                $stmtCheck->execute([$_POST['id']]);
+                $existeRegistro = $stmtCheck->fetch(PDO::FETCH_ASSOC)['total'] > 0;
+
+                // Só registra se ainda NÃO existe registro no caixa
+                if (!$existeRegistro) {
+                    $description = "OS #" . $_POST['id'] . " - " . $_POST['device'] . " - " . ucfirst($paymentMethod);
+
+                    // Se for pagamento em dinheiro com troco
+                    if ($paymentMethod === 'dinheiro' && $changeAmount > 0) {
+                        $valorRecebido = $totalCost + $changeAmount;
+
+                        // Registrar ENTRADA: Valor recebido do cliente (positivo)
+                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
+                            (user_id, type, description, amount, reference_id, reference_type, created_at)
+                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())");
+                        $stmtCash->execute([
+                            $_SESSION['user_id'],
+                            $description . " - Valor Recebido",
+                            $valorRecebido,
+                            $_POST['id']
+                        ]);
+
+                        // Registrar SAÍDA: Troco devolvido (negativo como expense)
+                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
+                            (user_id, type, description, amount, reference_id, reference_type, created_at)
+                            VALUES (?, 'expense', ?, ?, ?, 'service_order_change', NOW())");
+                        $stmtCash->execute([
+                            $_SESSION['user_id'],
+                            $description . " - Troco",
+                            $changeAmount,
+                            $_POST['id']
+                        ]);
+                    } else {
+                        // Pagamento sem troco (PIX, Cartão, etc) - registra valor total
+                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
+                            (user_id, type, description, amount, reference_id, reference_type, created_at)
+                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())");
+                        $stmtCash->execute([
+                            $_SESSION['user_id'],
+                            $description,
+                            $totalCost,
+                            $_POST['id']
+                        ]);
+                    }
+                }
+            }
+        }
+
+        // Atualizar produtos utilizados (se houver)
+        if (!empty($_POST['products_data'])) {
+            $productsData = json_decode($_POST['products_data'], true);
+
+            // Primeiro, remover produtos antigos e devolver ao estoque
+            $stmtOldProducts = $conn->prepare("SELECT product_id, quantity FROM service_order_items WHERE service_order_id = ?");
+            $stmtOldProducts->execute([$_POST['id']]);
+            $oldProducts = $stmtOldProducts->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($oldProducts as $oldProduct) {
+                // Devolver quantidade ao estoque
+                $stmtReturnStock = $conn->prepare("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?");
+                $stmtReturnStock->execute([$oldProduct['quantity'], $oldProduct['product_id']]);
+            }
+
+            // Remover todos os produtos antigos
+            $stmtDeleteItems = $conn->prepare("DELETE FROM service_order_items WHERE service_order_id = ?");
+            $stmtDeleteItems->execute([$_POST['id']]);
+
+            // Adicionar novos produtos
+            if (is_array($productsData) && count($productsData) > 0) {
+                $stmtProduct = $conn->prepare("INSERT INTO service_order_items
+                    (service_order_id, product_id, quantity, price, subtotal)
+                    VALUES (?, ?, ?, ?, ?)");
+
+                $stmtUpdateStock = $conn->prepare("UPDATE products
+                    SET stock_quantity = stock_quantity - ?
+                    WHERE id = ?");
+
+                foreach ($productsData as $product) {
+                    // Inserir item
+                    $stmtProduct->execute([
+                        $_POST['id'],
+                        $product['id'],
+                        $product['quantity'],
+                        $product['price'],
+                        $product['subtotal']
+                    ]);
+
+                    // Atualizar estoque
+                    $stmtUpdateStock->execute([
+                        $product['quantity'],
+                        $product['id']
+                    ]);
+                }
+            }
+        }
+
         echo "<script>alert('Ordem de serviço atualizada com sucesso!');window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
@@ -105,9 +265,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 // Excluir OS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $id = (int) $_POST['id'];
+
+    // Verificar se a OS já foi entregue
+    $stmtCheck = $conn->prepare("SELECT status FROM service_orders WHERE id = ?");
+    $stmtCheck->execute([$id]);
+    $order = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+    if ($order && $order['status'] === 'delivered') {
+        echo "<script>alert('⚠️ Não é possível excluir uma OS que já foi ENTREGUE!');window.location='index.php';</script>";
+        exit;
+    }
+
     $stmt = $conn->prepare("DELETE FROM service_orders WHERE id = ?");
     $stmt->execute([$id]);
     echo "<script>alert('Ordem de serviço excluída com sucesso!');window.location='index.php';</script>";
+    exit;
+}
+
+// Desbloquear OS (requer admin)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'unlock') {
+    // Limpar qualquer output anterior
+    ob_clean();
+
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+    $osId = (int) ($_POST['os_id'] ?? 0);
+
+    // Verificar se usuário é admin (buscar por email)
+    $stmt = $conn->prepare("SELECT id, password FROM users WHERE email = ? AND role = 'admin'");
+    $stmt->execute([$username]);
+    $admin = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($admin && password_verify($password, $admin['password'])) {
+        // Admin válido, desbloquear OS (mudar status de 'delivered' para 'completed')
+        $stmtUnlock = $conn->prepare("UPDATE service_orders SET status = 'completed' WHERE id = ?");
+        $stmtUnlock->execute([$osId]);
+
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'OS desbloqueada com sucesso!']);
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Credenciais de admin inválidas!']);
+    }
     exit;
 }
 
@@ -142,6 +341,9 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Buscar clientes para o formulário
 $customers = $conn->query("SELECT id, name, phone FROM customers ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Buscar produtos para o formulário
+$products = $conn->query("SELECT id, name, sale_price as price, stock_quantity FROM products WHERE stock_quantity > 0 AND active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // =============================
 // 📊 ESTATÍSTICAS
@@ -392,6 +594,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <button class="btn btn-primary btn-sm" onclick='printServiceOrder(<?= json_encode($row) ?>)' title="Imprimir">
                         <i class="fas fa-print"></i>
                     </button>
+                    <?php if ($row['status'] !== 'delivered'): ?>
                     <button class="btn btn-warning btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
                         <i class="fas fa-edit"></i>
                     </button>
@@ -400,6 +603,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <input type="hidden" name="id" value="<?= $row['id'] ?>">
                         <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
                     </form>
+                    <?php else: ?>
+                    <button class="btn btn-secondary btn-sm" onclick="openUnlockModal(<?= $row['id'] ?>)" title="Desbloquear OS (requer admin)">
+                        <i class="fas fa-lock"></i>
+                    </button>
+                    <?php endif; ?>
                 </td>
             </tr>
             <?php endforeach; endif; ?>
@@ -438,8 +646,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Valor (R$)</label>
-                    <input type="number" step="0.01" name="total_cost" class="form-control" placeholder="0,00" value="0">
+                    <label>Valor do Serviço (R$)</label>
+                    <input type="number" step="0.01" name="total_cost" id="create_total_cost" class="form-control" placeholder="0,00" value="0" oninput="calculateChange('create')">
                 </div>
                 <div class="form-group">
                     <label>Forma de Pagamento</label>
@@ -469,6 +677,112 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
             </div>
+            <div class="form-row" id="create_cash_payment_fields" style="display: none;">
+                <div class="form-group">
+                    <label>Valor Recebido (R$)</label>
+                    <input type="number" step="0.01" id="create_amount_received" class="form-control" placeholder="0,00" value="0" oninput="calculateChange('create')">
+                </div>
+                <div class="form-group">
+                    <label>Troco (R$)</label>
+                    <input type="number" step="0.01" name="change_amount" id="create_change_amount" class="form-control" placeholder="0,00" value="0" readonly style="background-color: #f0f0f0;">
+                </div>
+            </div>
+
+            <!-- Produtos Utilizados -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-box"></i> Produtos Utilizados no Reparo
+            </h3>
+            <div id="create_products_section">
+                <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:2;position:relative;">
+                            <label>Buscar Produto</label>
+                            <input type="text" id="create_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('create')">
+                            <div id="create_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                            <input type="hidden" id="create_selected_product_id">
+                            <input type="hidden" id="create_selected_product_name">
+                            <input type="hidden" id="create_selected_product_price">
+                            <input type="hidden" id="create_selected_product_stock">
+                        </div>
+                        <div class="form-group">
+                            <label>Quantidade</label>
+                            <input type="number" id="create_product_quantity" class="form-control" value="1" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button type="button" class="btn btn-primary" onclick="addProductToOS('create')" style="width:100%;">
+                                <i class="fas fa-plus"></i> Adicionar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="create_products_list"></div>
+                <input type="hidden" id="create_products_data" name="products_data" value="[]">
+            </div>
+
+            <script>
+            // Array de produtos disponíveis
+            const availableProducts = <?= json_encode($products) ?>;
+
+            function searchProducts(mode) {
+                const searchInput = document.getElementById(mode + '_product_search');
+                const resultsDiv = document.getElementById(mode + '_product_results');
+                const searchTerm = searchInput.value.toLowerCase().trim();
+
+                if (searchTerm.length < 2) {
+                    resultsDiv.style.display = 'none';
+                    return;
+                }
+
+                const filteredProducts = availableProducts.filter(p =>
+                    p.name.toLowerCase().includes(searchTerm)
+                );
+
+                if (filteredProducts.length === 0) {
+                    resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum produto encontrado</div>';
+                    resultsDiv.style.display = 'block';
+                    return;
+                }
+
+                let html = '';
+                filteredProducts.forEach(p => {
+                    html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
+                                  onmouseover="this.style.background='#f8f9ff'"
+                                  onmouseout="this.style.background='white'"
+                                  onclick="selectProduct('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.price}, ${p.stock_quantity})">
+                        <strong>${p.name}</strong><br>
+                        <small style="color:#666;">R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')} - Estoque: ${p.stock_quantity}</small>
+                    </div>`;
+                });
+
+                resultsDiv.innerHTML = html;
+                resultsDiv.style.display = 'block';
+            }
+
+            function selectProduct(mode, id, name, price, stock) {
+                document.getElementById(mode + '_product_search').value = name;
+                document.getElementById(mode + '_selected_product_id').value = id;
+                document.getElementById(mode + '_selected_product_name').value = name;
+                document.getElementById(mode + '_selected_product_price').value = price;
+                document.getElementById(mode + '_selected_product_stock').value = stock;
+                document.getElementById(mode + '_product_results').style.display = 'none';
+            }
+
+            // Fechar dropdown ao clicar fora
+            document.addEventListener('click', function(e) {
+                const createResults = document.getElementById('create_product_results');
+                const editResults = document.getElementById('edit_product_results');
+
+                if (!e.target.closest('#create_product_search') && !e.target.closest('#create_product_results')) {
+                    if (createResults) createResults.style.display = 'none';
+                }
+
+                if (!e.target.closest('#edit_product_search') && !e.target.closest('#edit_product_results')) {
+                    if (editResults) editResults.style.display = 'none';
+                }
+            });
+            </script>
 
             <!-- Diagnóstico -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
@@ -558,6 +872,34 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 </div>
             </div>
 
+            <!-- Garantia -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-shield-alt"></i> Garantia
+            </h3>
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label>Período de Garantia</label>
+                    <select name="warranty_period" class="form-control">
+                        <option value="30 dias">30 dias</option>
+                        <option value="60 dias">60 dias</option>
+                        <option value="90 dias" selected>90 dias (Padrão)</option>
+                        <option value="3 meses">3 meses</option>
+                        <option value="4 meses">4 meses</option>
+                        <option value="6 meses">6 meses</option>
+                        <option value="1 ano">1 ano</option>
+                        <option value="Sem garantia">Sem garantia</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button type="button"
+                            class="btn btn-secondary"
+                            onclick="window.open('../settings/warranty_config.php', '_blank')"
+                            style="white-space: nowrap;">
+                        <i class="fas fa-cog"></i> Configurar Termos
+                    </button>
+                </div>
+            </div>
+
             <div style="text-align:right;margin-top:20px;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
                 <button type="button" class="btn btn-secondary" onclick="closeModal('createModal')"><i class="fas fa-times"></i> Cancelar</button>
@@ -608,8 +950,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Valor (R$)</label>
-                    <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control">
+                    <label>Valor do Serviço (R$)</label>
+                    <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control" oninput="calculateChange('edit')">
                 </div>
             </div>
             <div class="form-row">
@@ -640,6 +982,49 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="12">12x</option>
                     </select>
                 </div>
+            </div>
+            <div class="form-row" id="edit_cash_payment_fields" style="display: none;">
+                <div class="form-group">
+                    <label>Valor Recebido (R$)</label>
+                    <input type="number" step="0.01" id="edit_amount_received" class="form-control" placeholder="0,00" value="0" oninput="calculateChange('edit')">
+                </div>
+                <div class="form-group">
+                    <label>Troco (R$)</label>
+                    <input type="number" step="0.01" name="change_amount" id="edit_change_amount" class="form-control" placeholder="0,00" value="0" readonly style="background-color: #f0f0f0;">
+                </div>
+            </div>
+
+            <!-- Produtos Utilizados -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-box"></i> Produtos Utilizados no Reparo
+            </h3>
+            <div id="edit_products_section">
+                <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:2;position:relative;">
+                            <label>Buscar Produto</label>
+                            <input type="text" id="edit_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('edit')">
+                            <div id="edit_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                            <input type="hidden" id="edit_selected_product_id">
+                            <input type="hidden" id="edit_selected_product_name">
+                            <input type="hidden" id="edit_selected_product_price">
+                            <input type="hidden" id="edit_selected_product_stock">
+                        </div>
+                        <div class="form-group">
+                            <label>Quantidade</label>
+                            <input type="number" id="edit_product_quantity" class="form-control" value="1" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button type="button" class="btn btn-primary" onclick="addProductToOS('edit')" style="width:100%;">
+                                <i class="fas fa-plus"></i> Adicionar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="edit_products_list"></div>
+                <input type="hidden" id="edit_products_data" name="products_data" value="[]">
             </div>
 
             <!-- Diagnóstico -->
@@ -730,9 +1115,71 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 </div>
             </div>
 
+            <!-- Garantia -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-shield-alt"></i> Garantia
+            </h3>
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label>Período de Garantia</label>
+                    <select name="warranty_period" id="edit_warranty_period" class="form-control">
+                        <option value="30 dias">30 dias</option>
+                        <option value="60 dias">60 dias</option>
+                        <option value="90 dias">90 dias (Padrão)</option>
+                        <option value="3 meses">3 meses</option>
+                        <option value="4 meses">4 meses</option>
+                        <option value="6 meses">6 meses</option>
+                        <option value="1 ano">1 ano</option>
+                        <option value="Sem garantia">Sem garantia</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button type="button"
+                            class="btn btn-secondary"
+                            onclick="window.open('../settings/warranty_config.php', '_blank')"
+                            style="white-space: nowrap;">
+                        <i class="fas fa-cog"></i> Configurar Termos
+                    </button>
+                </div>
+            </div>
+
             <div style="text-align:right;margin-top:20px;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Atualizar</button>
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Desbloquear OS -->
+<div id="unlockModal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <h2 style="color:#dc3545;margin-bottom:20px;">
+            <i class="fas fa-unlock"></i> Desbloquear OS
+        </h2>
+        <p style="color:#666;margin-bottom:20px;">
+            <i class="fas fa-exclamation-triangle"></i> Apenas administradores podem desbloquear ordens de serviço entregues.
+        </p>
+        <form id="unlockForm" onsubmit="unlockServiceOrder(event)">
+            <input type="hidden" id="unlock_os_id" value="">
+
+            <div class="form-group">
+                <label>Email do Admin</label>
+                <input type="email" id="unlock_username" class="form-control" required placeholder="admin@flreparos.com" autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label>Senha</label>
+                <input type="password" id="unlock_password" class="form-control" required placeholder="Digite a senha" autocomplete="off">
+            </div>
+
+            <div style="text-align:right;margin-top:20px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-unlock"></i> Desbloquear
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('unlockModal')">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
             </div>
         </form>
     </div>
@@ -745,12 +1192,131 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 function toggleInstallments(mode) {
     const paymentSelect = document.getElementById(mode + '_payment_method');
     const installmentsField = document.getElementById(mode + '_installments_field');
+    const cashPaymentFields = document.getElementById(mode + '_cash_payment_fields');
 
+    // Mostrar campo de parcelas se cartão de crédito
     if (paymentSelect.value === 'cartao_credito') {
         installmentsField.style.display = 'block';
-    } else {
-        installmentsField.style.display = 'none';
+        if (cashPaymentFields) cashPaymentFields.style.display = 'none';
     }
+    // Mostrar campos de valor recebido e troco se dinheiro
+    else if (paymentSelect.value === 'dinheiro') {
+        installmentsField.style.display = 'none';
+        if (cashPaymentFields) cashPaymentFields.style.display = 'flex';
+    }
+    // Esconder ambos para outras formas
+    else {
+        installmentsField.style.display = 'none';
+        if (cashPaymentFields) cashPaymentFields.style.display = 'none';
+    }
+}
+
+function calculateChange(mode) {
+    const totalCost = parseFloat(document.getElementById(mode + '_total_cost').value) || 0;
+    const amountReceived = parseFloat(document.getElementById(mode + '_amount_received').value) || 0;
+    const changeAmount = document.getElementById(mode + '_change_amount');
+
+    if (amountReceived >= totalCost && totalCost > 0) {
+        const change = amountReceived - totalCost;
+        changeAmount.value = change.toFixed(2);
+    } else {
+        changeAmount.value = '0.00';
+    }
+}
+
+// Gerenciamento de produtos na OS
+let createProducts = [];
+let editProducts = [];
+
+function addProductToOS(mode) {
+    const productId = document.getElementById(mode + '_selected_product_id').value;
+    const productName = document.getElementById(mode + '_selected_product_name').value;
+    const price = parseFloat(document.getElementById(mode + '_selected_product_price').value);
+    const stock = parseInt(document.getElementById(mode + '_selected_product_stock').value);
+    const quantityInput = document.getElementById(mode + '_product_quantity');
+    const quantity = parseInt(quantityInput.value);
+
+    if (!productId) {
+        alert('Selecione um produto');
+        return;
+    }
+
+    if (quantity > stock) {
+        alert(`Quantidade indisponível! Estoque: ${stock}`);
+        return;
+    }
+
+    const product = {
+        id: productId,
+        name: productName,
+        price: price,
+        quantity: quantity,
+        subtotal: price * quantity
+    };
+
+    if (mode === 'create') {
+        createProducts.push(product);
+    } else {
+        editProducts.push(product);
+    }
+
+    updateProductsList(mode);
+
+    // Limpar seleção
+    document.getElementById(mode + '_product_search').value = '';
+    document.getElementById(mode + '_selected_product_id').value = '';
+    document.getElementById(mode + '_selected_product_name').value = '';
+    document.getElementById(mode + '_selected_product_price').value = '';
+    document.getElementById(mode + '_selected_product_stock').value = '';
+    quantityInput.value = 1;
+}
+
+function removeProductFromOS(mode, index) {
+    if (mode === 'create') {
+        createProducts.splice(index, 1);
+    } else {
+        editProducts.splice(index, 1);
+    }
+    updateProductsList(mode);
+}
+
+function updateProductsList(mode) {
+    const products = mode === 'create' ? createProducts : editProducts;
+    const listDiv = document.getElementById(mode + '_products_list');
+    const dataInput = document.getElementById(mode + '_products_data');
+
+    if (products.length === 0) {
+        listDiv.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">Nenhum produto adicionado</p>';
+        dataInput.value = '[]';
+        return;
+    }
+
+    let total = 0;
+    let html = '<table class="table" style="margin-top:10px;">';
+    html += '<thead><tr><th>Produto</th><th>Qtd</th><th>Preço Unit.</th><th>Subtotal</th><th>Ações</th></tr></thead><tbody>';
+
+    products.forEach((p, index) => {
+        total += p.subtotal;
+        html += `<tr>
+            <td>${p.name}</td>
+            <td>${p.quantity}</td>
+            <td>R$ ${p.price.toFixed(2).replace('.', ',')}</td>
+            <td>R$ ${p.subtotal.toFixed(2).replace('.', ',')}</td>
+            <td>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeProductFromOS('${mode}', ${index})">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    html += `<div style="text-align:right;font-weight:bold;font-size:16px;color:#667eea;margin-top:10px;">
+        Total em Produtos: R$ ${total.toFixed(2).replace('.', ',')}
+    </div>`;
+
+    listDiv.innerHTML = html;
+    dataInput.value = JSON.stringify(products);
 }
 
 function openEditModal(o){
@@ -763,7 +1329,15 @@ function openEditModal(o){
     document.getElementById('edit_payment_method').value=o.payment_method||'';
     document.getElementById('edit_installments').value=o.installments||1;
 
-    // Mostrar campo de parcelas se for cartão de crédito
+    // Calcular valor recebido a partir do troco (se houver)
+    const totalCost = parseFloat(o.total_cost) || 0;
+    const changeAmount = parseFloat(o.change_amount) || 0;
+    const amountReceived = totalCost + changeAmount;
+
+    document.getElementById('edit_change_amount').value=o.change_amount||0;
+    document.getElementById('edit_amount_received').value=amountReceived.toFixed(2);
+
+    // Mostrar campo de parcelas/troco conforme forma de pagamento
     toggleInstallments('edit');
 
     // Diagnóstico
@@ -791,25 +1365,98 @@ function openEditModal(o){
     document.getElementById('edit_technician_name').value=o.technician_name||'';
     document.getElementById('edit_attendant_name').value=o.attendant_name||'';
 
+    // Garantia
+    document.getElementById('edit_warranty_period').value=o.warranty_period||'90 dias';
+
+    // Limpar produtos e carregar produtos da OS
+    editProducts = [];
+    loadOSProducts(o.id);
+
     openModal('editModal');
 }
 
-function printServiceOrder(order) {
-    // Buscar dados do cliente
-    const customerId = order.customer_id;
+// Carregar produtos de uma OS existente
+async function loadOSProducts(osId) {
+    try {
+        const response = await fetch(`get_os_products.php?os_id=${osId}`);
+        const data = await response.json();
 
-    fetch(`../../modules/customers/get_customer.php?id=${customerId}`)
-        .then(response => response.json())
-        .then(customer => {
-            generateServiceOrderPrint(order, customer);
-        })
-        .catch(error => {
-            console.error('Erro ao buscar cliente:', error);
-            alert('Erro ao carregar dados do cliente');
-        });
+        if (data.success && data.products.length > 0) {
+            editProducts = data.products.map(p => ({
+                id: p.product_id,
+                name: p.product_name,
+                price: parseFloat(p.price),
+                quantity: parseInt(p.quantity),
+                subtotal: parseFloat(p.subtotal)
+            }));
+            updateProductsList('edit');
+        } else {
+            updateProductsList('edit');
+        }
+    } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+        updateProductsList('edit');
+    }
 }
 
-function generateServiceOrderPrint(order, customer) {
+function openUnlockModal(osId) {
+    document.getElementById('unlock_os_id').value = osId;
+    document.getElementById('unlock_username').value = '';
+    document.getElementById('unlock_password').value = '';
+    openModal('unlockModal');
+}
+
+async function unlockServiceOrder(event) {
+    event.preventDefault();
+
+    const osId = document.getElementById('unlock_os_id').value;
+    const username = document.getElementById('unlock_username').value;
+    const password = document.getElementById('unlock_password').value;
+
+    const formData = new FormData();
+    formData.append('action', 'unlock');
+    formData.append('os_id', osId);
+    formData.append('username', username);
+    formData.append('password', password);
+
+    try {
+        const response = await fetch('index.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('✅ ' + data.message);
+            closeModal('unlockModal');
+            window.location.reload();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    } catch (error) {
+        alert('❌ Erro ao desbloquear OS: ' + error.message);
+    }
+}
+
+function printServiceOrder(order) {
+    // Buscar dados do cliente e termos de garantia
+    const customerId = order.customer_id;
+
+    Promise.all([
+        fetch(`../../modules/customers/get_customer.php?id=${customerId}`).then(r => r.json()),
+        fetch('get_warranty_terms.php').then(r => r.json())
+    ])
+    .then(([customer, warrantyTerms]) => {
+        generateServiceOrderPrint(order, customer, warrantyTerms);
+    })
+    .catch(error => {
+        console.error('Erro ao buscar dados:', error);
+        alert('Erro ao carregar dados para impressão');
+    });
+}
+
+function generateServiceOrderPrint(order, customer, warrantyTerms) {
     const printWindow = window.open('', '_blank');
 
     // Traduzir status
@@ -838,142 +1485,11 @@ function generateServiceOrderPrint(order, customer) {
     // Formatar data
     const dateFormatted = new Date(order.entry_datetime).toLocaleDateString('pt-BR');
 
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Ordem de Serviço #${order.id}</title>
-    <style>
-        @media print {
-            @page { margin: 20mm; }
-            body { margin: 0; }
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 36px;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-        .logo i {
-            margin-right: 10px;
-        }
-        .subtitle {
-            color: #666;
-            font-size: 14px;
-        }
-        .os-number {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin: 20px 0 10px;
-        }
-        .section {
-            margin-bottom: 25px;
-        }
-        .section-title {
-            background: #667eea;
-            color: white;
-            padding: 8px 12px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            border-radius: 4px;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-        }
-        .info-item {
-            padding: 10px;
-            background: #f5f5f5;
-            border-left: 3px solid #667eea;
-        }
-        .info-label {
-            font-size: 11px;
-            color: #666;
-            text-transform: uppercase;
-            margin-bottom: 3px;
-        }
-        .info-value {
-            font-size: 14px;
-            color: #333;
-            font-weight: 600;
-        }
-        .checklist {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .checklist-item {
-            padding: 8px;
-            background: #f9f9f9;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-        }
-        .checklist-item i {
-            margin-right: 8px;
-            color: #28a745;
-        }
-        .text-area {
-            background: #f9f9f9;
-            padding: 12px;
-            border-radius: 4px;
-            min-height: 80px;
-            margin-top: 8px;
-            white-space: pre-wrap;
-        }
-        .signature-area {
-            margin-top: 60px;
-            padding-top: 20px;
-            border-top: 2px dashed #ccc;
-        }
-        .signature-line {
-            border-top: 1px solid #333;
-            margin: 40px 20px 5px;
-            padding-top: 5px;
-            text-align: center;
-            color: #666;
-            font-size: 12px;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #667eea;
-            color: #666;
-            font-size: 12px;
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .status-open { background: #ffc107; color: #000; }
-        .status-in_progress { background: #17a2b8; color: white; }
-        .status-completed { background: #28a745; color: white; }
-        .status-delivered { background: #6c757d; color: white; }
-        .status-cancelled { background: #dc3545; color: white; }
-    </style>
-</head>
-<body>
+    // Substituir [PERIODO_GARANTIA] no texto da garantia
+    const warrantyPeriod = order.warranty_period || '90 dias';
+
+    // Conteúdo de uma via (será duplicado)
+    const viaContent = `
     <div class="header">
         <div class="logo">
             <i class="fas fa-mobile-alt"></i> FL REPAROS
@@ -984,7 +1500,7 @@ function generateServiceOrderPrint(order, customer) {
     </div>
 
     <div class="section">
-        <div class="section-title"><i class="fas fa-user"></i> Dados do Cliente</div>
+        <div class="section-title"><i class="fas fa-user"></i> Cliente</div>
         <div class="info-grid">
             <div class="info-item">
                 <div class="info-label">Nome</div>
@@ -994,19 +1510,11 @@ function generateServiceOrderPrint(order, customer) {
                 <div class="info-label">Telefone</div>
                 <div class="info-value">${customer.phone || '-'}</div>
             </div>
-            <div class="info-item">
-                <div class="info-label">Email</div>
-                <div class="info-value">${customer.email || '-'}</div>
-            </div>
-            <div class="info-item">
-                <div class="info-label">Endereço</div>
-                <div class="info-value">${customer.address || '-'}</div>
-            </div>
         </div>
     </div>
 
     <div class="section">
-        <div class="section-title"><i class="fas fa-mobile-alt"></i> Dados do Equipamento</div>
+        <div class="section-title"><i class="fas fa-mobile-alt"></i> Equipamento</div>
         <div class="info-grid">
             <div class="info-item">
                 <div class="info-label">Aparelho</div>
@@ -1017,17 +1525,33 @@ function generateServiceOrderPrint(order, customer) {
                 <div class="info-value">${dateFormatted}</div>
             </div>
             <div class="info-item">
-                <div class="info-label">O Aparelho Liga?</div>
+                <div class="info-label">Liga?</div>
                 <div class="info-value">${order.device_powers_on === 'sim' ? 'Sim' : 'Não'}</div>
             </div>
             <div class="info-item">
-                <div class="info-label">Valor do Serviço</div>
-                <div class="info-value" style="color: #28a745;">${totalFormatted}</div>
+                <div class="info-label">Valor Total</div>
+                <div class="info-value" style="color: #28a745; font-weight: bold;">${totalFormatted}</div>
             </div>
             ${order.payment_method ? `
             <div class="info-item">
                 <div class="info-label">Forma de Pagamento</div>
-                <div class="info-value">${paymentMap[order.payment_method] || order.payment_method}${order.payment_method === 'cartao_credito' && order.installments > 1 ? ' - ' + order.installments + 'x de R$ ' + (order.total_cost / order.installments).toFixed(2).replace('.', ',') : ''}</div>
+                <div class="info-value">${paymentMap[order.payment_method] || order.payment_method}</div>
+            </div>
+            ` : ''}
+            ${order.payment_method === 'cartao_credito' && order.installments > 1 ? `
+            <div class="info-item">
+                <div class="info-label">Parcelamento</div>
+                <div class="info-value">${order.installments}x de R$ ${(order.total_cost / order.installments).toFixed(2).replace('.', ',')}</div>
+            </div>
+            ` : ''}
+            ${order.payment_method === 'dinheiro' && order.change_amount > 0 ? `
+            <div class="info-item">
+                <div class="info-label">Valor Recebido</div>
+                <div class="info-value">R$ ${(parseFloat(order.total_cost) + parseFloat(order.change_amount)).toFixed(2).replace('.', ',')}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Troco</div>
+                <div class="info-value">R$ ${parseFloat(order.change_amount).toFixed(2).replace('.', ',')}</div>
             </div>
             ` : ''}
         </div>
@@ -1035,20 +1559,21 @@ function generateServiceOrderPrint(order, customer) {
 
     ${order.reported_problem ? `
     <div class="section">
-        <div class="section-title"><i class="fas fa-exclamation-circle"></i> Problema Relatado</div>
+        <div class="section-title"><i class="fas fa-exclamation-circle"></i> Problema</div>
         <div class="text-area">${order.reported_problem}</div>
     </div>
     ` : ''}
 
     ${order.technical_report ? `
     <div class="section">
-        <div class="section-title"><i class="fas fa-wrench"></i> Laudo Técnico</div>
+        <div class="section-title"><i class="fas fa-wrench"></i> Laudo</div>
         <div class="text-area">${order.technical_report}</div>
     </div>
     ` : ''}
 
+    ${(order.checklist_case || order.checklist_screen_protector || order.checklist_camera || order.checklist_housing || order.checklist_lens || order.checklist_face_id || order.checklist_sim_card || order.checklist_battery || order.checklist_charger || order.checklist_headphones) ? `
     <div class="section">
-        <div class="section-title"><i class="fas fa-clipboard-check"></i> Checklist do Aparelho</div>
+        <div class="section-title"><i class="fas fa-clipboard-check"></i> Checklist</div>
         <div class="checklist">
             ${order.checklist_case ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Capa</div>' : ''}
             ${order.checklist_screen_protector ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Película</div>' : ''}
@@ -1062,10 +1587,11 @@ function generateServiceOrderPrint(order, customer) {
             ${order.checklist_headphones ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Fone</div>' : ''}
         </div>
     </div>
+    ` : ''}
 
     ${order.customer_observations ? `
     <div class="section">
-        <div class="section-title"><i class="fas fa-comment-alt"></i> Observações para o Cliente</div>
+        <div class="section-title"><i class="fas fa-comment-alt"></i> Observações</div>
         <div class="text-area">${order.customer_observations}</div>
     </div>
     ` : ''}
@@ -1076,16 +1602,30 @@ function generateServiceOrderPrint(order, customer) {
         <div class="info-grid">
             ${order.technician_name ? `
             <div class="info-item">
-                <div class="info-label">Técnico Responsável</div>
+                <div class="info-label">Técnico</div>
                 <div class="info-value">${order.technician_name}</div>
             </div>
             ` : ''}
             ${order.attendant_name ? `
             <div class="info-item">
-                <div class="info-label">Atendente Responsável</div>
+                <div class="info-label">Atendente</div>
                 <div class="info-value">${order.attendant_name}</div>
             </div>
             ` : ''}
+        </div>
+    </div>
+    ` : ''}
+
+    ${warrantyPeriod !== 'Sem garantia' ? `
+    <div class="warranty-section">
+        <div class="warranty-title">⚠️ ${warrantyTerms.title}</div>
+        ${warrantyTerms.clauses.map(clause => `
+        <div class="warranty-clause">
+            <strong>${clause.number}.</strong> ${clause.text.replace('[PERIODO_GARANTIA]', warrantyPeriod)}
+        </div>
+        `).join('')}
+        <div class="warranty-footer">
+            ${warrantyTerms.footer}
         </div>
     </div>
     ` : ''}
@@ -1097,8 +1637,224 @@ function generateServiceOrderPrint(order, customer) {
     </div>
 
     <div class="footer">
-        <p><strong>FL REPAROS</strong> - Sistema de Gestão para Assistência Técnica</p>
-        <p>Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+        <p><strong>FL REPAROS</strong></p>
+        <p>${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</p>
+    </div>
+`;
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ordem de Serviço #${order.id}</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 5mm;
+            }
+            body { margin: 0; padding: 0; }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 5px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            max-width: 100%;
+        }
+        .via {
+            border: 2px solid #667eea;
+            padding: 5px;
+            font-size: 10px;
+        }
+        @media print {
+            .container {
+                page-break-after: avoid;
+            }
+            .via {
+                page-break-inside: avoid;
+            }
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 4px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 3px;
+        }
+        .logo {
+            font-size: 14px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 1px;
+        }
+        .logo i {
+            margin-right: 3px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 6.5px;
+        }
+        .os-number {
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+            margin: 2px 0;
+        }
+        .section {
+            margin-bottom: 4px;
+        }
+        .section-title {
+            background: #667eea;
+            color: white;
+            padding: 2px 5px;
+            font-weight: bold;
+            margin-bottom: 2px;
+            border-radius: 2px;
+            font-size: 7.5px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 3px;
+        }
+        .info-grid.single-column {
+            grid-template-columns: 1fr;
+        }
+        .info-item {
+            padding: 1.5px 3px;
+            background: #f5f5f5;
+            border-left: 2px solid #667eea;
+        }
+        .info-label {
+            font-size: 6.5px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 0.5px;
+            font-weight: 600;
+        }
+        .info-value {
+            font-size: 8.5px;
+            color: #333;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .checklist {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5px;
+            margin-top: 3px;
+        }
+        .checklist-item {
+            padding: 1.5px 3px;
+            background: #f9f9f9;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            font-size: 7.5px;
+        }
+        .checklist-item i {
+            margin-right: 2px;
+            color: #28a745;
+            font-size: 7.5px;
+        }
+        .text-area {
+            background: #f9f9f9;
+            padding: 3px;
+            border-radius: 2px;
+            min-height: 20px;
+            margin-top: 3px;
+            white-space: pre-wrap;
+            font-size: 7.5px;
+            line-height: 1.3;
+        }
+        .warranty-section {
+            margin-top: 5px;
+            padding: 3px;
+            background: #fffbf0;
+            border: 1px solid #ffc107;
+            border-radius: 2px;
+        }
+        .warranty-title {
+            font-size: 8px;
+            font-weight: bold;
+            color: #856404;
+            text-align: center;
+            margin-bottom: 2px;
+        }
+        .warranty-clause {
+            font-size: 6px;
+            line-height: 1.4;
+            margin-bottom: 1.5px;
+            text-align: justify;
+        }
+        .warranty-footer {
+            font-size: 6px;
+            text-align: center;
+            margin-top: 2px;
+            font-style: italic;
+            color: #856404;
+        }
+        .signature-area {
+            margin-top: 6px;
+            padding-top: 3px;
+            border-top: 1px dashed #ccc;
+        }
+        .signature-line {
+            border-top: 1px solid #333;
+            margin: 6px 5px 1px;
+            padding-top: 1px;
+            text-align: center;
+            color: #666;
+            font-size: 6.5px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 4px;
+            padding-top: 2px;
+            border-top: 1px solid #667eea;
+            color: #666;
+            font-size: 5.5px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 1.5px 5px;
+            border-radius: 5px;
+            font-size: 7.5px;
+            font-weight: bold;
+        }
+        .via-label {
+            text-align: center;
+            font-size: 8px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 3px;
+            text-transform: uppercase;
+        }
+        .status-open { background: #ffc107; color: #000; }
+        .status-in_progress { background: #17a2b8; color: white; }
+        .status-completed { background: #28a745; color: white; }
+        .status-delivered { background: #6c757d; color: white; }
+        .status-cancelled { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- VIA 1 - CLIENTE -->
+        <div class="via">
+            <div class="via-label">📋 VIA DO CLIENTE</div>
+            ${viaContent}
+        </div>
+
+        <!-- VIA 2 - LOJA -->
+        <div class="via">
+            <div class="via-label">🏪 VIA DA LOJA</div>
+            ${viaContent}
+        </div>
     </div>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">

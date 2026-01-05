@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'close') {
         // Buscar totais do período
         $stmt = $conn->prepare("
             SELECT
-                COALESCE(SUM(CASE WHEN type IN ('sale', 'entry') THEN amount ELSE 0 END), 0) as total_sales,
+                COALESCE(SUM(CASE WHEN type IN ('sale', 'entry', 'service') THEN amount ELSE 0 END), 0) as total_sales,
                 COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as total_expenses
             FROM cash_flow cf
             WHERE cf.created_at >= (SELECT opening_date FROM cash_register WHERE id = ?)
@@ -151,7 +151,7 @@ $current_balance = $current_register ? $current_register['opening_balance'] : 0;
 
 if ($current_register) {
     foreach ($movements as $mov) {
-        if (in_array($mov['type'], ['sale', 'entry'])) {
+        if (in_array($mov['type'], ['sale', 'entry', 'service'])) {
             $total_entries += $mov['amount'];
         } else if ($mov['type'] === 'expense') {
             $total_exits += $mov['amount'];
@@ -180,6 +180,7 @@ $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
 function traduzirTipo($type) {
     $map = [
         'sale' => 'Venda',
+        'service' => 'Serviço',
         'entry' => 'Entrada',
         'expense' => 'Despesa',
         'opening' => 'Abertura',
@@ -280,7 +281,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     padding:5px 10px;border-radius:8px;color:white;font-weight:bold;
     font-size:0.85rem;display:inline-block;
 }
-.badge.sale, .badge.entry {background:#4CAF50;}
+.badge.sale, .badge.entry, .badge.service {background:#4CAF50;}
 .badge.expense {background:#f44336;}
 .badge.opening {background:#2196F3;}
 .badge.closing {background:#9C27B0;}
@@ -393,7 +394,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <td><span class="badge <?= $mov['type'] ?>"><?= traduzirTipo($mov['type']) ?></span></td>
                         <td><?= htmlspecialchars($mov['description']) ?></td>
                         <td>
-                            <?php if (in_array($mov['type'], ['sale', 'entry'])): ?>
+                            <?php if (in_array($mov['type'], ['sale', 'entry', 'service'])): ?>
                                 <strong style="color:#4CAF50;">+ R$ <?= number_format($mov['amount'], 2, ',', '.') ?></strong>
                             <?php else: ?>
                                 <strong style="color:#f44336;">- R$ <?= number_format($mov['amount'], 2, ',', '.') ?></strong>

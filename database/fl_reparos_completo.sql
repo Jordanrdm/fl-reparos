@@ -348,6 +348,7 @@ CREATE TABLE `service_orders` (
   `total_cost` decimal(10,2) DEFAULT 0.00,
   `payment_method` enum('dinheiro','pix','cartao_credito','cartao_debito') DEFAULT NULL COMMENT 'Forma de pagamento',
   `installments` int(11) DEFAULT 1 COMMENT 'N·mero de parcelas (cartÒo crÚdito)',
+  `change_amount` decimal(10,2) DEFAULT 0.00 COMMENT 'Valor do troco (quando pagamento em dinheiro)',
   `status` enum('open','in_progress','completed','delivered','cancelled') DEFAULT 'open',
   `technical_report` text DEFAULT NULL,
   `reported_problem` text DEFAULT NULL,
@@ -366,6 +367,7 @@ CREATE TABLE `service_orders` (
   `checklist_headphones` tinyint(1) DEFAULT 0 COMMENT 'Fone',
   `technician_name` varchar(255) DEFAULT NULL,
   `attendant_name` varchar(255) DEFAULT NULL,
+  `warranty_period` varchar(50) DEFAULT '90 dias' COMMENT 'Período de garantia',
   `entry_date` timestamp NULL DEFAULT current_timestamp(),
   `delivery_date` timestamp NULL DEFAULT NULL,
   `notes` text DEFAULT NULL,
@@ -385,6 +387,38 @@ LOCK TABLES `service_orders` WRITE;
 /*!40000 ALTER TABLE `service_orders` DISABLE KEYS */;
 INSERT INTO `service_orders` VALUES (3,4,'2025-12-25 13:19:44',NULL,1,'Iphone 12','Display quebrado','tela trincada','Troca do display',450.00,NULL,1,'open',NULL,NULL,NULL,NULL,'sim',0,0,0,0,0,0,0,0,0,0,NULL,NULL,'2025-11-16 20:30:16',NULL,NULL),(4,1,'2025-12-25 13:19:44',NULL,1,'Iphone 12','Bateria','Bateria com defeito','Troca da bateria',300.00,NULL,1,'in_progress',NULL,NULL,NULL,NULL,'sim',0,0,0,0,0,0,0,0,0,0,NULL,NULL,'2025-11-16 21:10:02',NULL,NULL),(5,3,'2025-12-25 13:19:44',NULL,1,'Iphone 12','Bateria','Defeito na bateria','Troca da bateria',300.00,'cartao_credito',1,'in_progress','','tezfmbkpnfgbiok','digvhdfuvhuo','','sim',1,1,1,1,1,1,1,0,1,0,'Jordan','Lua','2025-11-16 21:11:48',NULL,NULL),(10,2,'2025-12-26 00:13:18',NULL,1,'Iphone 13','',NULL,NULL,3333.00,'dinheiro',1,'in_progress','','','','','sim',0,0,0,0,0,0,0,0,0,0,'','','2025-12-26 03:13:18',NULL,NULL);
 /*!40000 ALTER TABLE `service_orders` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `service_order_items`
+--
+
+DROP TABLE IF EXISTS `service_order_items`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `service_order_items` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `service_order_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `price` decimal(10,2) NOT NULL COMMENT 'Preço unitário no momento do uso',
+  `subtotal` decimal(10,2) NOT NULL COMMENT 'quantity * price',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_service_order` (`service_order_id`),
+  KEY `idx_product` (`product_id`),
+  CONSTRAINT `service_order_items_ibfk_1` FOREIGN KEY (`service_order_id`) REFERENCES `service_orders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `service_order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `service_order_items`
+--
+
+LOCK TABLES `service_order_items` WRITE;
+/*!40000 ALTER TABLE `service_order_items` DISABLE KEYS */;
+/*!40000 ALTER TABLE `service_order_items` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --

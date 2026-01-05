@@ -16,6 +16,8 @@ $conn = $database->getConnection();
 // Criar Despesa
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
     try {
+        $conn->beginTransaction();
+
         $stmt = $conn->prepare("INSERT INTO expenses
             (description, type, amount, expense_date, supplier_id, payment_method, status, observations, user_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
@@ -30,9 +32,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['observations'] ?? null,
             $_SESSION['user_id']
         ]);
+
+        $expenseId = $conn->lastInsertId();
+
+        // Se status é 'pago', registrar no caixa
+        if (($_POST['status'] ?? 'pendente') === 'pago') {
+            $stmt = $conn->prepare("INSERT INTO cash_flow
+                (user_id, type, description, amount, reference_id, reference_type, created_at)
+                VALUES (?, 'expense', ?, ?, ?, 'expense', NOW())");
+            $stmt->execute([
+                $_SESSION['user_id'],
+                'Despesa: ' . $_POST['description'],
+                $_POST['amount'],
+                $expenseId
+            ]);
+        }
+
+        $conn->commit();
         echo "<script>alert('Despesa cadastrada com sucesso!');window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
+        $conn->rollBack();
         echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
     }
 }
@@ -40,6 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 // Editar Despesa
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     try {
+        $conn->beginTransaction();
+
+        // Buscar status anterior
+        $stmt = $conn->prepare("SELECT status, amount, description FROM expenses WHERE id = ?");
+        $stmt->execute([$_POST['id']]);
+        $oldExpense = $stmt->fetch(PDO::FETCH_ASSOC);
+        $oldStatus = $oldExpense['status'];
+        $newStatus = $_POST['status'];
+
+        // Atualizar despesa
         $stmt = $conn->prepare("UPDATE expenses
             SET description=?, type=?, amount=?, expense_date=?, supplier_id=?, payment_method=?, status=?, observations=?, updated_at=NOW()
             WHERE id=?");
@@ -50,13 +80,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['expense_date'],
             !empty($_POST['supplier_id']) ? $_POST['supplier_id'] : null,
             $_POST['payment_method'],
-            $_POST['status'],
+            $newStatus,
             $_POST['observations'] ?? null,
             $_POST['id']
         ]);
+
+        // Gerenciar registro no caixa
+        // Caso 1: Status mudou de NÃO pago para PAGO → adicionar no caixa
+        if ($oldStatus !== 'pago' && $newStatus === 'pago') {
+            $stmt = $conn->prepare("INSERT INTO cash_flow
+                (user_id, type, description, amount, reference_id, reference_type, created_at)
+                VALUES (?, 'expense', ?, ?, ?, 'expense', NOW())");
+            $stmt->execute([
+                $_SESSION['user_id'],
+                'Despesa: ' . $_POST['description'],
+                $_POST['amount'],
+                $_POST['id']
+            ]);
+        }
+        // Caso 2: Status mudou de PAGO para NÃO pago → remover do caixa
+        elseif ($oldStatus === 'pago' && $newStatus !== 'pago') {
+            $stmt = $conn->prepare("DELETE FROM cash_flow WHERE reference_id = ? AND reference_type = 'expense'");
+            $stmt->execute([$_POST['id']]);
+        }
+        // Caso 3: Status continua PAGO mas valor/descrição mudou → atualizar registro no caixa
+        elseif ($oldStatus === 'pago' && $newStatus === 'pago') {
+            $stmt = $conn->prepare("UPDATE cash_flow
+                SET description = ?, amount = ?
+                WHERE reference_id = ? AND reference_type = 'expense'");
+            $stmt->execute([
+                'Despesa: ' . $_POST['description'],
+                $_POST['amount'],
+                $_POST['id']
+            ]);
+        }
+
+        $conn->commit();
         echo "<script>alert('Despesa atualizada com sucesso!');window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
+        $conn->rollBack();
         echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
     }
 }
