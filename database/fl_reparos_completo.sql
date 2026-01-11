@@ -169,7 +169,9 @@ CREATE TABLE `customers` (
   `notes` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`)
+  `deleted_at` timestamp NULL DEFAULT NULL COMMENT 'Data de deleção (soft delete)',
+  PRIMARY KEY (`id`),
+  KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -355,11 +357,17 @@ CREATE TABLE `service_orders` (
   `customer_observations` text DEFAULT NULL,
   `internal_observations` text DEFAULT NULL,
   `device_powers_on` enum('sim','nao') DEFAULT 'sim',
+  `device_password` varchar(100) DEFAULT NULL COMMENT 'Senha ou padrão do aparelho',
   `checklist_case` tinyint(1) DEFAULT 0 COMMENT 'Capa',
   `checklist_screen_protector` tinyint(1) DEFAULT 0 COMMENT 'Película',
   `checklist_camera` tinyint(1) DEFAULT 0 COMMENT 'Câmera',
   `checklist_housing` tinyint(1) DEFAULT 0 COMMENT 'Carcaça',
   `checklist_lens` tinyint(1) DEFAULT 0 COMMENT 'Lente',
+  `checklist_lens_condition` varchar(50) DEFAULT NULL COMMENT 'Lente: arranhada/trincada/sem',
+  `checklist_back_cover` varchar(100) DEFAULT NULL COMMENT 'Tampa: trincada/detalhes',
+  `checklist_screen` tinyint(1) DEFAULT 0 COMMENT 'Tela trincada',
+  `checklist_connector` tinyint(1) DEFAULT 0 COMMENT 'Conector',
+  `checklist_camera_front_back` varchar(50) DEFAULT NULL COMMENT 'Câmera: frontal/traseira',
   `checklist_face_id` tinyint(1) DEFAULT 0 COMMENT 'Face ID',
   `checklist_sim_card` tinyint(1) DEFAULT 0 COMMENT 'Chip',
   `checklist_battery` tinyint(1) DEFAULT 0 COMMENT 'Bateria',
@@ -438,8 +446,10 @@ CREATE TABLE `users` (
   `active` tinyint(1) DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL COMMENT 'Data de deleção (soft delete)',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`)
+  UNIQUE KEY `email` (`email`),
+  KEY `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

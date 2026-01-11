@@ -88,20 +88,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     }
 }
 
-// Excluir Usuário
+// Excluir Usuário (Soft Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
-    $id = (int) $_POST['id'];
+    try {
+        $id = (int) $_POST['id'];
 
-    // Não permitir deletar a si mesmo
-    if ($id == $_SESSION['user_id']) {
-        echo "<script>alert('Você não pode deletar seu próprio usuário!');window.location='index.php';</script>";
+        // Não permitir deletar a si mesmo
+        if ($id == $_SESSION['user_id']) {
+            echo "<script>alert('Você não pode deletar seu próprio usuário!');window.location='index.php';</script>";
+            exit;
+        }
+
+        // Soft delete: marca como deletado ao invés de remover do banco
+        $stmt = $conn->prepare("UPDATE users SET deleted_at = NOW() WHERE id = ?");
+        $stmt->execute([$id]);
+
+        echo "<script>alert('Usuário excluído com sucesso!');window.location='index.php';</script>";
+        exit;
+
+    } catch (PDOException $e) {
+        $errorMsg = "Erro ao excluir usuário: " . htmlspecialchars($e->getMessage());
+        echo "<script>alert('" . addslashes($errorMsg) . "');window.location='index.php';</script>";
         exit;
     }
-
-    $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $stmt->execute([$id]);
-    echo "<script>alert('Usuário excluído com sucesso!');window.location='index.php';</script>";
-    exit;
 }
 
 // =============================
@@ -110,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
 $search = $_GET['search'] ?? '';
 $filter_role = $_GET['role'] ?? '';
 $filter_status = $_GET['status'] ?? '';
-$where = "WHERE 1=1";
+$where = "WHERE deleted_at IS NULL";  // Filtrar apenas usuários ativos (não deletados)
 $params = [];
 
 if (!empty($search)) {

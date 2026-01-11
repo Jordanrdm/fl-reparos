@@ -216,9 +216,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Buscar clientes para autocomplete (SEM coluna active)
+// Buscar clientes para autocomplete (apenas clientes ativos)
 try {
-    $stmt = $pdo->prepare("SELECT id, name, cpf_cnpj, phone FROM customers ORDER BY name ASC LIMIT 100");
+    $stmt = $pdo->prepare("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC LIMIT 100");
     $stmt->execute();
     $customers = $stmt->fetchAll();
 } catch (PDOException $e) {

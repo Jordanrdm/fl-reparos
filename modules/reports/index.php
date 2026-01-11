@@ -32,33 +32,80 @@ if ($period_type === 'today') {
 }
 
 // =============================
+// 📄 PAGINAÇÃO
+// =============================
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+
+// Validar valores permitidos de registros por página
+$allowedPerPage = [10, 20, 30, 50, 100];
+if (!in_array($perPage, $allowedPerPage)) {
+    $perPage = 20;
+}
+
+$offset = ($page - 1) * $perPage;
+
+// =============================
 // 📊 RELATÓRIO DE VENDAS
 // =============================
 if ($report_type === 'sales') {
+    // Contar total de registros
+    $stmtCount = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM sales s
+        WHERE DATE(s.created_at) BETWEEN ? AND ?
+    ");
+    $stmtCount->execute([$date_from, $date_to]);
+    $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+    $totalPages = ceil($totalRecords / $perPage);
+
+    // Buscar registros com paginação
     $stmt = $conn->prepare("
         SELECT
             s.*,
             c.name as customer_name,
             u.name as user_name
         FROM sales s
-        LEFT JOIN customers c ON s.customer_id = c.id
-        LEFT JOIN users u ON s.user_id = u.id
+        LEFT JOIN customers c ON s.customer_id = c.id AND c.deleted_at IS NULL
+        LEFT JOIN users u ON s.user_id = u.id AND u.deleted_at IS NULL
         WHERE DATE(s.created_at) BETWEEN ? AND ?
         ORDER BY s.created_at DESC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$date_from, $date_to]);
+    $stmt->execute([$date_from, $date_to, $perPage, $offset]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Totalizadores
-    $total_sales = array_sum(array_column($data, 'final_amount'));
-    $total_discount = array_sum(array_column($data, 'discount'));
-    $avg_ticket = count($data) > 0 ? $total_sales / count($data) : 0;
+    // Totalizadores (calcular sobre TODOS os registros, não só da página)
+    $stmtTotals = $conn->prepare("
+        SELECT
+            SUM(final_amount) as total_sales,
+            SUM(discount) as total_discount,
+            AVG(final_amount) as avg_ticket
+        FROM sales
+        WHERE DATE(created_at) BETWEEN ? AND ?
+    ");
+    $stmtTotals->execute([$date_from, $date_to]);
+    $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+    $total_sales = $totals['total_sales'] ?? 0;
+    $total_discount = $totals['total_discount'] ?? 0;
+    $avg_ticket = $totals['avg_ticket'] ?? 0;
 }
 
 // =============================
 // 💰 RELATÓRIO DE FLUXO DE CAIXA
 // =============================
 elseif ($report_type === 'cashflow') {
+    // Contar total de registros
+    $stmtCount = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM cash_flow cf
+        WHERE DATE(cf.created_at) BETWEEN ? AND ?
+    ");
+    $stmtCount->execute([$date_from, $date_to]);
+    $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+    $totalPages = ceil($totalRecords / $perPage);
+
+    // Buscar registros com paginação
     $stmt = $conn->prepare("
         SELECT
             cf.*,
@@ -67,20 +114,23 @@ elseif ($report_type === 'cashflow') {
         LEFT JOIN users u ON cf.user_id = u.id
         WHERE DATE(cf.created_at) BETWEEN ? AND ?
         ORDER BY cf.created_at DESC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$date_from, $date_to]);
+    $stmt->execute([$date_from, $date_to, $perPage, $offset]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Totalizadores
-    $total_entries = 0;
-    $total_exits = 0;
-    foreach ($data as $row) {
-        if (in_array($row['type'], ['sale', 'entry'])) {
-            $total_entries += $row['amount'];
-        } else {
-            $total_exits += $row['amount'];
-        }
-    }
+    // Totalizadores (calcular sobre TODOS os registros, não só da página)
+    $stmtTotals = $conn->prepare("
+        SELECT
+            SUM(CASE WHEN type IN ('sale', 'entry') THEN amount ELSE 0 END) as total_entries,
+            SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_exits
+        FROM cash_flow
+        WHERE DATE(created_at) BETWEEN ? AND ?
+    ");
+    $stmtTotals->execute([$date_from, $date_to]);
+    $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+    $total_entries = $totals['total_entries'] ?? 0;
+    $total_exits = $totals['total_exits'] ?? 0;
     $balance = $total_entries - $total_exits;
 }
 
@@ -88,6 +138,17 @@ elseif ($report_type === 'cashflow') {
 // 📝 RELATÓRIO DE DESPESAS
 // =============================
 elseif ($report_type === 'expenses') {
+    // Contar total de registros
+    $stmtCount = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM expenses e
+        WHERE DATE(e.expense_date) BETWEEN ? AND ?
+    ");
+    $stmtCount->execute([$date_from, $date_to]);
+    $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+    $totalPages = ceil($totalRecords / $perPage);
+
+    // Buscar registros com paginação
     $stmt = $conn->prepare("
         SELECT
             e.*,
@@ -96,34 +157,46 @@ elseif ($report_type === 'expenses') {
         LEFT JOIN users u ON e.user_id = u.id
         WHERE DATE(e.expense_date) BETWEEN ? AND ?
         ORDER BY e.expense_date DESC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$date_from, $date_to]);
+    $stmt->execute([$date_from, $date_to, $perPage, $offset]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Totalizadores
-    $total_paid = 0;
-    $total_pending = 0;
-    $total_fixed = 0;
-    $total_variable = 0;
-    foreach ($data as $row) {
-        if ($row['status'] === 'pago') {
-            $total_paid += $row['amount'];
-        } else {
-            $total_pending += $row['amount'];
-        }
-        if ($row['type'] === 'fixa') {
-            $total_fixed += $row['amount'];
-        } elseif ($row['type'] === 'variavel') {
-            $total_variable += $row['amount'];
-        }
-    }
-    $total_expenses = $total_paid + $total_pending;
+    // Totalizadores (calcular sobre TODOS os registros, não só da página)
+    $stmtTotals = $conn->prepare("
+        SELECT
+            SUM(CASE WHEN status = 'pago' THEN amount ELSE 0 END) as total_paid,
+            SUM(CASE WHEN status = 'pendente' THEN amount ELSE 0 END) as total_pending,
+            SUM(CASE WHEN type = 'fixa' THEN amount ELSE 0 END) as total_fixed,
+            SUM(CASE WHEN type = 'variavel' THEN amount ELSE 0 END) as total_variable,
+            SUM(amount) as total_expenses
+        FROM expenses
+        WHERE DATE(expense_date) BETWEEN ? AND ?
+    ");
+    $stmtTotals->execute([$date_from, $date_to]);
+    $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+    $total_paid = $totals['total_paid'] ?? 0;
+    $total_pending = $totals['total_pending'] ?? 0;
+    $total_fixed = $totals['total_fixed'] ?? 0;
+    $total_variable = $totals['total_variable'] ?? 0;
+    $total_expenses = $totals['total_expenses'] ?? 0;
 }
 
 // =============================
 // 🔧 RELATÓRIO DE ORDENS DE SERVIÇO
 // =============================
 elseif ($report_type === 'service_orders') {
+    // Contar total de registros
+    $stmtCount = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM service_orders so
+        WHERE DATE(so.entry_date) BETWEEN ? AND ?
+    ");
+    $stmtCount->execute([$date_from, $date_to]);
+    $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+    $totalPages = ceil($totalRecords / $perPage);
+
+    // Buscar registros com paginação
     $stmt = $conn->prepare("
         SELECT
             so.*,
@@ -134,21 +207,44 @@ elseif ($report_type === 'service_orders') {
         LEFT JOIN users u ON so.user_id = u.id
         WHERE DATE(so.entry_date) BETWEEN ? AND ?
         ORDER BY so.entry_date DESC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$date_from, $date_to]);
+    $stmt->execute([$date_from, $date_to, $perPage, $offset]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Totalizadores
-    $total_os = count($data);
-    $total_open = count(array_filter($data, fn($os) => in_array($os['status'], ['open', 'in_progress'])));
-    $total_closed = count(array_filter($data, fn($os) => $os['status'] === 'closed'));
-    $total_value = array_sum(array_column($data, 'total_cost'));
+    // Totalizadores (calcular sobre TODOS os registros, não só da página)
+    $stmtTotals = $conn->prepare("
+        SELECT
+            COUNT(*) as total_os,
+            SUM(CASE WHEN status IN ('open', 'in_progress') THEN 1 ELSE 0 END) as total_open,
+            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as total_closed,
+            SUM(total_cost) as total_value
+        FROM service_orders
+        WHERE DATE(entry_date) BETWEEN ? AND ?
+    ");
+    $stmtTotals->execute([$date_from, $date_to]);
+    $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+    $total_os = $totals['total_os'] ?? 0;
+    $total_open = $totals['total_open'] ?? 0;
+    $total_closed = $totals['total_closed'] ?? 0;
+    $total_value = $totals['total_value'] ?? 0;
 }
 
 // =============================
 // 💳 RELATÓRIO DE CONTAS A RECEBER
 // =============================
 elseif ($report_type === 'receivables') {
+    // Contar total de registros
+    $stmtCount = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM accounts_receivable ar
+        WHERE DATE(ar.due_date) BETWEEN ? AND ?
+    ");
+    $stmtCount->execute([$date_from, $date_to]);
+    $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+    $totalPages = ceil($totalRecords / $perPage);
+
+    // Buscar registros com paginação
     $stmt = $conn->prepare("
         SELECT
             ar.*,
@@ -157,24 +253,27 @@ elseif ($report_type === 'receivables') {
         LEFT JOIN customers c ON ar.customer_id = c.id
         WHERE DATE(ar.due_date) BETWEEN ? AND ?
         ORDER BY ar.due_date DESC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$date_from, $date_to]);
+    $stmt->execute([$date_from, $date_to, $perPage, $offset]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Totalizadores
-    $total_paid = 0;
-    $total_pending = 0;
-    $total_overdue = 0;
-    foreach ($data as $row) {
-        if ($row['status'] === 'paid') {
-            $total_paid += $row['amount'];
-        } elseif ($row['status'] === 'pending') {
-            $total_pending += $row['amount'];
-        } elseif ($row['status'] === 'overdue') {
-            $total_overdue += $row['amount'];
-        }
-    }
-    $total_receivables = $total_paid + $total_pending + $total_overdue;
+    // Totalizadores (calcular sobre TODOS os registros, não só da página)
+    $stmtTotals = $conn->prepare("
+        SELECT
+            SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_paid,
+            SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_pending,
+            SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END) as total_overdue,
+            SUM(amount) as total_receivables
+        FROM accounts_receivable
+        WHERE DATE(due_date) BETWEEN ? AND ?
+    ");
+    $stmtTotals->execute([$date_from, $date_to]);
+    $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
+    $total_paid = $totals['total_paid'] ?? 0;
+    $total_pending = $totals['total_pending'] ?? 0;
+    $total_overdue = $totals['total_overdue'] ?? 0;
+    $total_receivables = $totals['total_receivables'] ?? 0;
 }
 
 // =============================
@@ -208,6 +307,14 @@ elseif ($report_type === 'consolidated') {
 // =============================
 // 🎨 FUNÇÕES AUXILIARES
 // =============================
+function buildPaginationUrl($page, $perPage, $reportType, $dateFrom, $dateTo) {
+    return "?type=" . urlencode($reportType) .
+           "&date_from=" . urlencode($dateFrom) .
+           "&date_to=" . urlencode($dateTo) .
+           "&page=" . $page .
+           "&per_page=" . $perPage;
+}
+
 function formatDate($date) {
     return date('d/m/Y', strtotime($date));
 }
@@ -388,11 +495,72 @@ tr:hover {background:rgba(103,58,183,0.1);}
     box-shadow:0 6px 20px rgba(0,0,0,0.4);
 }
 
+.pagination-box {
+    background:rgba(255,255,255,0.9);
+    backdrop-filter:blur(10px);
+    padding:20px;
+    border-radius:15px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.15);
+    margin-bottom:25px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:15px;
+}
+.pagination {
+    display:flex;
+    gap:8px;
+    align-items:center;
+}
+.pagination a, .pagination span {
+    padding:8px 12px;
+    border-radius:8px;
+    text-decoration:none;
+    transition:all .3s;
+    font-weight:500;
+}
+.pagination a {
+    background:rgba(102,126,234,0.1);
+    color:#667eea;
+}
+.pagination a:hover {
+    background:rgba(102,126,234,0.2);
+    transform:translateY(-2px);
+}
+.pagination .active {
+    background:linear-gradient(45deg,#667eea,#764ba2);
+    color:white;
+}
+.pagination .disabled {
+    background:rgba(0,0,0,0.05);
+    color:#999;
+    cursor:not-allowed;
+}
+.per-page-selector {
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+.per-page-selector select {
+    padding:8px 12px;
+    border:2px solid #ddd;
+    border-radius:8px;
+    font-size:0.9rem;
+    cursor:pointer;
+    transition:border .3s;
+}
+.per-page-selector select:focus {
+    border-color:#667eea;
+    outline:none;
+}
+
 @media print {
     body {background:white;padding:20px;}
     .header, .filters-box {display:none;}
     .print-btn {display:none;}
     .btn {display:none;}
+    .pagination-box {display:none;}
     .stats-box, .report-box {
         box-shadow:none;
         border:1px solid #ddd;
@@ -502,7 +670,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 </div>
                 <div class="stat-card blue">
                     <div class="icon"><i class="fas fa-shopping-cart"></i></div>
-                    <div class="value"><?= count($data) ?></div>
+                    <div class="value"><?= $totalRecords ?></div>
                     <div class="label">Número de Vendas</div>
                 </div>
                 <div class="stat-card orange">
@@ -515,6 +683,36 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div class="value">R$ <?= number_format($total_discount, 2, ',', '.') ?></div>
                     <div class="label">Total Descontos</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Paginação -->
+        <div class="pagination-box">
+            <div class="per-page-selector">
+                <span>Registros por página:</span>
+                <select onchange="changePerPage(this.value, '<?= $report_type ?>', '<?= $date_from ?>', '<?= $date_to ?>')"
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="pagination">
+                <?php if($page > 1): ?>
+                    <a href="<?= buildPaginationUrl($page - 1, $perPage, $report_type, $date_from, $date_to) ?>"><i class="fas fa-chevron-left"></i> Anterior</a>
+                <?php else: ?>
+                    <span class="disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span>Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="<?= buildPaginationUrl($page + 1, $perPage, $report_type, $date_from, $date_to) ?>">Próxima <i class="fas fa-chevron-right"></i></a>
+                <?php else: ?>
+                    <span class="disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Total: <?= $totalRecords ?> registro(s)
             </div>
         </div>
 
@@ -566,6 +764,36 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div class="value">R$ <?= number_format($balance, 2, ',', '.') ?></div>
                     <div class="label">Saldo</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Paginação -->
+        <div class="pagination-box">
+            <div class="per-page-selector">
+                <span>Registros por página:</span>
+                <select onchange="changePerPage(this.value, '<?= $report_type ?>', '<?= $date_from ?>', '<?= $date_to ?>')"
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="pagination">
+                <?php if($page > 1): ?>
+                    <a href="<?= buildPaginationUrl($page - 1, $perPage, $report_type, $date_from, $date_to) ?>"><i class="fas fa-chevron-left"></i> Anterior</a>
+                <?php else: ?>
+                    <span class="disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span>Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="<?= buildPaginationUrl($page + 1, $perPage, $report_type, $date_from, $date_to) ?>">Próxima <i class="fas fa-chevron-right"></i></a>
+                <?php else: ?>
+                    <span class="disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Total: <?= $totalRecords ?> registro(s)
             </div>
         </div>
 
@@ -634,6 +862,36 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
         </div>
 
+        <!-- Paginação -->
+        <div class="pagination-box">
+            <div class="per-page-selector">
+                <span>Registros por página:</span>
+                <select onchange="changePerPage(this.value, '<?= $report_type ?>', '<?= $date_from ?>', '<?= $date_to ?>')"
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="pagination">
+                <?php if($page > 1): ?>
+                    <a href="<?= buildPaginationUrl($page - 1, $perPage, $report_type, $date_from, $date_to) ?>"><i class="fas fa-chevron-left"></i> Anterior</a>
+                <?php else: ?>
+                    <span class="disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span>Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="<?= buildPaginationUrl($page + 1, $perPage, $report_type, $date_from, $date_to) ?>">Próxima <i class="fas fa-chevron-right"></i></a>
+                <?php else: ?>
+                    <span class="disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Total: <?= $totalRecords ?> registro(s)
+            </div>
+        </div>
+
         <div class="report-box">
             <h2 style="margin-bottom:20px;"><i class="fas fa-list"></i> Detalhamento de Despesas</h2>
             <table class="table">
@@ -687,6 +945,36 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div class="value">R$ <?= number_format($total_value, 2, ',', '.') ?></div>
                     <div class="label">Valor Total</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Paginação -->
+        <div class="pagination-box">
+            <div class="per-page-selector">
+                <span>Registros por página:</span>
+                <select onchange="changePerPage(this.value, '<?= $report_type ?>', '<?= $date_from ?>', '<?= $date_to ?>')"
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="pagination">
+                <?php if($page > 1): ?>
+                    <a href="<?= buildPaginationUrl($page - 1, $perPage, $report_type, $date_from, $date_to) ?>"><i class="fas fa-chevron-left"></i> Anterior</a>
+                <?php else: ?>
+                    <span class="disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span>Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="<?= buildPaginationUrl($page + 1, $perPage, $report_type, $date_from, $date_to) ?>">Próxima <i class="fas fa-chevron-right"></i></a>
+                <?php else: ?>
+                    <span class="disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Total: <?= $totalRecords ?> registro(s)
             </div>
         </div>
 
@@ -746,6 +1034,36 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
         </div>
 
+        <!-- Paginação -->
+        <div class="pagination-box">
+            <div class="per-page-selector">
+                <span>Registros por página:</span>
+                <select onchange="changePerPage(this.value, '<?= $report_type ?>', '<?= $date_from ?>', '<?= $date_to ?>')"
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="pagination">
+                <?php if($page > 1): ?>
+                    <a href="<?= buildPaginationUrl($page - 1, $perPage, $report_type, $date_from, $date_to) ?>"><i class="fas fa-chevron-left"></i> Anterior</a>
+                <?php else: ?>
+                    <span class="disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span>Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="<?= buildPaginationUrl($page + 1, $perPage, $report_type, $date_from, $date_to) ?>">Próxima <i class="fas fa-chevron-right"></i></a>
+                <?php else: ?>
+                    <span class="disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+            <div style="color:#666;font-size:0.9rem;">
+                Total: <?= $totalRecords ?> registro(s)
+            </div>
+        </div>
+
         <div class="report-box">
             <h2 style="margin-bottom:20px;"><i class="fas fa-list"></i> Detalhamento de Contas a Receber</h2>
             <table class="table">
@@ -781,6 +1099,16 @@ tr:hover {background:rgba(103,58,183,0.1);}
 <button class="print-btn" onclick="window.print()" title="Imprimir Relatório">
     <i class="fas fa-print"></i>
 </button>
+
+<script>
+function changePerPage(perPage, reportType, dateFrom, dateTo) {
+    window.location.href = '?type=' + encodeURIComponent(reportType) +
+                          '&date_from=' + encodeURIComponent(dateFrom) +
+                          '&date_to=' + encodeURIComponent(dateTo) +
+                          '&page=1' +
+                          '&per_page=' + perPage;
+}
+</script>
 
 </body>
 </html>

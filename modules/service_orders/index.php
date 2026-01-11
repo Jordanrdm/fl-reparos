@@ -7,7 +7,11 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once('../../config/database.php');
+require_once('../../config/app.php');
 $conn = $database->getConnection();
+
+// Verificar permissão de visualização
+requirePermission('service_orders', 'view');
 
 // =============================
 // 🔧 CRUD
@@ -15,16 +19,16 @@ $conn = $database->getConnection();
 
 // Criar OS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
+    requirePermission('service_orders', 'create');
     try {
         $stmt = $conn->prepare("INSERT INTO service_orders
             (customer_id, user_id, device, status, total_cost, payment_method, installments, change_amount, entry_datetime,
              technical_report, reported_problem, customer_observations, internal_observations,
-             device_powers_on,
-             checklist_case, checklist_screen_protector, checklist_camera, checklist_housing,
-             checklist_lens, checklist_face_id, checklist_sim_card, checklist_battery,
-             checklist_charger, checklist_headphones,
+             device_powers_on, device_password,
+             checklist_lens, checklist_lens_condition, checklist_back_cover, checklist_screen,
+             checklist_connector, checklist_camera_front_back, checklist_face_id, checklist_sim_card,
              technician_name, attendant_name, warranty_period)
-            VALUES (?, ?, ?, 'open', ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, 'open', ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $_POST['customer_id'],
             $_SESSION['user_id'],
@@ -38,16 +42,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['customer_observations'] ?? null,
             $_POST['internal_observations'] ?? null,
             $_POST['device_powers_on'] ?? 'sim',
-            isset($_POST['checklist_case']) ? 1 : 0,
-            isset($_POST['checklist_screen_protector']) ? 1 : 0,
-            isset($_POST['checklist_camera']) ? 1 : 0,
-            isset($_POST['checklist_housing']) ? 1 : 0,
+            $_POST['device_password'] ?? null,
             isset($_POST['checklist_lens']) ? 1 : 0,
+            $_POST['checklist_lens_condition'] ?? null,
+            $_POST['checklist_back_cover'] ?? null,
+            isset($_POST['checklist_screen']) ? 1 : 0,
+            isset($_POST['checklist_connector']) ? 1 : 0,
+            $_POST['checklist_camera_front_back'] ?? null,
             isset($_POST['checklist_face_id']) ? 1 : 0,
             isset($_POST['checklist_sim_card']) ? 1 : 0,
-            isset($_POST['checklist_battery']) ? 1 : 0,
-            isset($_POST['checklist_charger']) ? 1 : 0,
-            isset($_POST['checklist_headphones']) ? 1 : 0,
             $_POST['technician_name'] ?? null,
             $_POST['attendant_name'] ?? null,
             $_POST['warranty_period'] ?? '90 dias'
@@ -97,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 
 // Editar OS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
+    requirePermission('service_orders', 'edit');
     try {
         // Buscar status anterior da OS
         $stmtOld = $conn->prepare("SELECT status, total_cost, payment_method FROM service_orders WHERE id = ?");
@@ -112,10 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
         $stmt = $conn->prepare("UPDATE service_orders
             SET customer_id=?, device=?, status=?, total_cost=?, payment_method=?, installments=?, change_amount=?,
                 technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
-                device_powers_on=?,
-                checklist_case=?, checklist_screen_protector=?, checklist_camera=?, checklist_housing=?,
-                checklist_lens=?, checklist_face_id=?, checklist_sim_card=?, checklist_battery=?,
-                checklist_charger=?, checklist_headphones=?,
+                device_powers_on=?, device_password=?,
+                checklist_lens=?, checklist_lens_condition=?, checklist_back_cover=?, checklist_screen=?,
+                checklist_connector=?, checklist_camera_front_back=?, checklist_face_id=?, checklist_sim_card=?,
                 technician_name=?, attendant_name=?, warranty_period=?
             WHERE id=?");
         $stmt->execute([
@@ -131,16 +134,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['customer_observations'] ?? null,
             $_POST['internal_observations'] ?? null,
             $_POST['device_powers_on'] ?? 'sim',
-            isset($_POST['checklist_case']) ? 1 : 0,
-            isset($_POST['checklist_screen_protector']) ? 1 : 0,
-            isset($_POST['checklist_camera']) ? 1 : 0,
-            isset($_POST['checklist_housing']) ? 1 : 0,
+            $_POST['device_password'] ?? null,
             isset($_POST['checklist_lens']) ? 1 : 0,
+            $_POST['checklist_lens_condition'] ?? null,
+            $_POST['checklist_back_cover'] ?? null,
+            isset($_POST['checklist_screen']) ? 1 : 0,
+            isset($_POST['checklist_connector']) ? 1 : 0,
+            $_POST['checklist_camera_front_back'] ?? null,
             isset($_POST['checklist_face_id']) ? 1 : 0,
             isset($_POST['checklist_sim_card']) ? 1 : 0,
-            isset($_POST['checklist_battery']) ? 1 : 0,
-            isset($_POST['checklist_charger']) ? 1 : 0,
-            isset($_POST['checklist_headphones']) ? 1 : 0,
             $_POST['technician_name'] ?? null,
             $_POST['attendant_name'] ?? null,
             $_POST['warranty_period'] ?? '90 dias',
@@ -264,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 
 // Excluir OS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
+    requirePermission('service_orders', 'delete');
     $id = (int) $_POST['id'];
 
     // Verificar se a OS já foi entregue
@@ -329,18 +332,46 @@ if (!empty($filter_status)) {
     $params[] = $filter_status;
 }
 
-$stmt = $conn->prepare("
-    SELECT so.*, c.name as customer_name, c.phone as customer_phone
+// =============================
+// 📄 PAGINAÇÃO
+// =============================
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+
+// Validar valores permitidos de registros por página
+$allowedPerPage = [10, 20, 30, 50, 100];
+if (!in_array($perPage, $allowedPerPage)) {
+    $perPage = 20;
+}
+
+$offset = ($page - 1) * $perPage;
+
+// Contar total de registros
+$stmtCount = $conn->prepare("
+    SELECT COUNT(*) as total
     FROM service_orders so
     LEFT JOIN customers c ON so.customer_id = c.id
     $where
-    ORDER BY so.id DESC
 ");
-$stmt->execute($params);
+$stmtCount->execute($params);
+$totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+$totalPages = ceil($totalRecords / $perPage);
+
+// Buscar registros com paginação
+$paramsWithPagination = array_merge($params, [$perPage, $offset]);
+$stmt = $conn->prepare("
+    SELECT so.*, c.name as customer_name, c.phone as customer_phone
+    FROM service_orders so
+    LEFT JOIN customers c ON so.customer_id = c.id AND c.deleted_at IS NULL
+    $where
+    ORDER BY so.id DESC
+    LIMIT ? OFFSET ?
+");
+$stmt->execute($paramsWithPagination);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Buscar clientes para o formulário
-$customers = $conn->query("SELECT id, name, phone FROM customers ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+// Buscar clientes para o formulário (apenas clientes ativos)
+$customers = $conn->query("SELECT id, name, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Buscar produtos para o formulário
 $products = $conn->query("SELECT id, name, sale_price as price, stock_quantity FROM products WHERE stock_quantity > 0 AND active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
@@ -373,9 +404,7 @@ function traduzirStatus($status) {
     return $map[$status] ?? ucfirst($status);
 }
 
-function formatMoney($value) {
-    return 'R$ ' . number_format($value, 2, ',', '.');
-}
+// formatMoney já está definido em app.php
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -495,6 +524,96 @@ tr:hover {background:rgba(103,58,183,0.1);}
 .filter-box .form-group {
     flex:1;min-width:200px;
 }
+
+/* Paginação */
+.pagination-container {
+    background:rgba(255,255,255,0.9);
+    backdrop-filter:blur(10px);
+    padding:15px 20px;
+    border-radius:15px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.15);
+    margin-bottom:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:15px;
+}
+.pagination-info {
+    color:#666;
+    font-size:0.9rem;
+    font-weight:500;
+}
+.pagination-controls {
+    display:flex;
+    gap:20px;
+    align-items:center;
+    flex-wrap:wrap;
+}
+.per-page-selector {
+    display:flex;
+    gap:10px;
+    align-items:center;
+}
+.per-page-selector label {
+    color:#666;
+    font-size:0.9rem;
+    font-weight:500;
+}
+.per-page-selector select {
+    padding:8px 12px;
+    border:2px solid #ddd;
+    border-radius:8px;
+    background:white;
+    font-size:0.9rem;
+    cursor:pointer;
+    transition:all 0.3s;
+}
+.per-page-selector select:hover {
+    border-color:#667eea;
+}
+.per-page-selector select:focus {
+    border-color:#667eea;
+    outline:none;
+    box-shadow:0 0 0 3px rgba(102,126,234,0.1);
+}
+.pagination-buttons {
+    display:flex;
+    gap:10px;
+    align-items:center;
+}
+.pagination-btn {
+    padding:8px 15px;
+    border:2px solid #ddd;
+    border-radius:8px;
+    background:white;
+    color:#667eea;
+    text-decoration:none;
+    font-weight:500;
+    transition:all 0.3s;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    cursor:pointer;
+}
+.pagination-btn:hover:not(.disabled) {
+    background:linear-gradient(45deg,#667eea,#764ba2);
+    color:white;
+    border-color:transparent;
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(102,126,234,0.3);
+}
+.pagination-btn.disabled {
+    background:#f5f5f5;
+    color:#ccc;
+    border-color:#f0f0f0;
+    cursor:not-allowed;
+}
+.page-info {
+    color:#666;
+    font-weight:500;
+    font-size:0.9rem;
+}
 </style>
 </head>
 <body>
@@ -562,6 +681,44 @@ tr:hover {background:rgba(103,58,183,0.1);}
         </form>
     </div>
 
+    <!-- Paginação -->
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Mostrando <?= min($offset + 1, $totalRecords) ?> a <?= min($offset + $perPage, $totalRecords) ?> de <?= $totalRecords ?> registros
+        </div>
+
+        <div class="pagination-controls">
+            <div class="per-page-selector">
+                <label>Registros por página:</label>
+                <select onchange="changePerPage(this.value)">
+                    <?php foreach($allowedPerPage as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="pagination-buttons">
+                <?php if($page > 1): ?>
+                    <a href="?page=<?= $page - 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($filter_status) ? '&status=' . urlencode($filter_status) : '' ?>" class="pagination-btn">
+                        <i class="fas fa-chevron-left"></i> Anterior
+                    </a>
+                <?php else: ?>
+                    <span class="pagination-btn disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                <?php endif; ?>
+
+                <span class="page-info">Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="?page=<?= $page + 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($filter_status) ? '&status=' . urlencode($filter_status) : '' ?>" class="pagination-btn">
+                        Próxima <i class="fas fa-chevron-right"></i>
+                    </a>
+                <?php else: ?>
+                    <span class="pagination-btn disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
     <table class="table">
         <thead>
             <tr>
@@ -595,14 +752,18 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <i class="fas fa-print"></i>
                     </button>
                     <?php if ($row['status'] !== 'delivered'): ?>
-                    <button class="btn btn-warning btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <form method="POST" onsubmit="return confirm('Excluir esta OS?');" style="display:inline;">
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                        <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
-                    </form>
+                        <?php if (hasPermission('service_orders', 'edit')): ?>
+                        <button class="btn btn-warning btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <?php endif; ?>
+                        <?php if (hasPermission('service_orders', 'delete')): ?>
+                        <form method="POST" onsubmit="return confirm('Excluir esta OS?');" style="display:inline;">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
+                            <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
+                        </form>
+                        <?php endif; ?>
                     <?php else: ?>
                     <button class="btn btn-secondary btn-sm" onclick="openUnlockModal(<?= $row['id'] ?>)" title="Desbloquear OS (requer admin)">
                         <i class="fas fa-lock"></i>
@@ -800,6 +961,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="nao">Não</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Senha/Padrão do Aparelho</label>
+                    <input type="text" name="device_password" class="form-control" placeholder="Digite a senha ou desenhe o padrão">
+                </div>
             </div>
             <div class="form-group">
                 <label>Laudo Técnico</label>
@@ -812,35 +977,39 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </h3>
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_case" value="1"> Capa
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen_protector" value="1"> Película
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_camera" value="1"> Câmera
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_housing" value="1"> Carcaça
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_lens" value="1"> Lente
                 </label>
+                <div class="form-group" style="margin:0;">
+                    <select name="checklist_lens_condition" class="form-control">
+                        <option value="">Condição da lente</option>
+                        <option value="sem">Sem lente</option>
+                        <option value="arranhada">Arranhada</option>
+                        <option value="trincada">Trincada</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" value="1"> Face ID
+                    <input type="checkbox" name="checklist_screen" value="1"> Tela Trincada
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_sim_card" value="1"> Chip
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_battery" value="1"> Bateria
+                    <input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_charger" value="1"> Carregador
+                    <input type="checkbox" name="checklist_connector" value="1"> Conector
                 </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_headphones" value="1"> Fone
-                </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <select name="checklist_camera_front_back" class="form-control">
+                        <option value="">Câmera</option>
+                        <option value="frontal">Frontal</option>
+                        <option value="traseira">Traseira</option>
+                        <option value="ambas">Ambas</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Observações -->
@@ -1043,6 +1212,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="nao">Não</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Senha/Padrão do Aparelho</label>
+                    <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Digite a senha ou desenhe o padrão">
+                </div>
             </div>
             <div class="form-group">
                 <label>Laudo Técnico</label>
@@ -1055,35 +1228,39 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </h3>
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_case" id="edit_checklist_case" value="1"> Capa
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen_protector" id="edit_checklist_screen_protector" value="1"> Película
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_camera" id="edit_checklist_camera" value="1"> Câmera
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_housing" id="edit_checklist_housing" value="1"> Carcaça
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente
                 </label>
+                <div class="form-group" style="margin:0;">
+                    <select name="checklist_lens_condition" id="edit_checklist_lens_condition" class="form-control">
+                        <option value="">Condição da lente</option>
+                        <option value="sem">Sem lente</option>
+                        <option value="arranhada">Arranhada</option>
+                        <option value="trincada">Trincada</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Face ID
+                    <input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_battery" id="edit_checklist_battery" value="1"> Bateria
+                    <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_charger" id="edit_checklist_charger" value="1"> Carregador
+                    <input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector
                 </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_headphones" id="edit_checklist_headphones" value="1"> Fone
-                </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <select name="checklist_camera_front_back" id="edit_checklist_camera_front_back" class="form-control">
+                        <option value="">Câmera</option>
+                        <option value="frontal">Frontal</option>
+                        <option value="traseira">Traseira</option>
+                        <option value="ambas">Ambas</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Observações -->
@@ -1343,19 +1520,18 @@ function openEditModal(o){
     // Diagnóstico
     document.getElementById('edit_reported_problem').value=o.reported_problem||'';
     document.getElementById('edit_device_powers_on').value=o.device_powers_on||'sim';
+    document.getElementById('edit_device_password').value=o.device_password||'';
     document.getElementById('edit_technical_report').value=o.technical_report||'';
 
     // Checklist
-    document.getElementById('edit_checklist_case').checked=o.checklist_case==1;
-    document.getElementById('edit_checklist_screen_protector').checked=o.checklist_screen_protector==1;
-    document.getElementById('edit_checklist_camera').checked=o.checklist_camera==1;
-    document.getElementById('edit_checklist_housing').checked=o.checklist_housing==1;
     document.getElementById('edit_checklist_lens').checked=o.checklist_lens==1;
+    document.getElementById('edit_checklist_lens_condition').value=o.checklist_lens_condition||'';
+    document.getElementById('edit_checklist_back_cover').value=o.checklist_back_cover||'';
+    document.getElementById('edit_checklist_screen').checked=o.checklist_screen==1;
+    document.getElementById('edit_checklist_connector').checked=o.checklist_connector==1;
+    document.getElementById('edit_checklist_camera_front_back').value=o.checklist_camera_front_back||'';
     document.getElementById('edit_checklist_face_id').checked=o.checklist_face_id==1;
     document.getElementById('edit_checklist_sim_card').checked=o.checklist_sim_card==1;
-    document.getElementById('edit_checklist_battery').checked=o.checklist_battery==1;
-    document.getElementById('edit_checklist_charger').checked=o.checklist_charger==1;
-    document.getElementById('edit_checklist_headphones').checked=o.checklist_headphones==1;
 
     // Observações
     document.getElementById('edit_customer_observations').value=o.customer_observations||'';
@@ -1491,12 +1667,32 @@ function generateServiceOrderPrint(order, customer, warrantyTerms) {
     // Conteúdo de uma via (será duplicado)
     const viaContent = `
     <div class="header">
-        <div class="logo">
-            <i class="fas fa-mobile-alt"></i> FL REPAROS
+        <div class="header-content">
+            <div class="header-left">
+                <div class="logo">
+                    <i class="fas fa-mobile-alt"></i> FL REPAROS
+                </div>
+                <div class="subtitle">Sistema de Gestão para Assistência Técnica</div>
+                <div class="os-number">OS #${order.id}</div>
+                <span class="status-badge status-${order.status}">${statusMap[order.status] || order.status}</span>
+            </div>
+            <div class="password-box">
+                <div class="password-label">Senha/Padrão</div>
+                <div class="password-text">${order.device_password || ''}</div>
+                <div class="pattern-grid">
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                    <div class="pattern-dot"></div>
+                </div>
+                <div class="password-footer">Desenhe o Padrão:</div>
+            </div>
         </div>
-        <div class="subtitle">Sistema de Gestão para Assistência Técnica</div>
-        <div class="os-number">OS #${order.id}</div>
-        <span class="status-badge status-${order.status}">${statusMap[order.status] || order.status}</span>
     </div>
 
     <div class="section">
@@ -1571,20 +1767,17 @@ function generateServiceOrderPrint(order, customer, warrantyTerms) {
     </div>
     ` : ''}
 
-    ${(order.checklist_case || order.checklist_screen_protector || order.checklist_camera || order.checklist_housing || order.checklist_lens || order.checklist_face_id || order.checklist_sim_card || order.checklist_battery || order.checklist_charger || order.checklist_headphones) ? `
+    ${(order.checklist_lens || order.checklist_lens_condition || order.checklist_back_cover || order.checklist_screen || order.checklist_connector || order.checklist_camera_front_back || order.checklist_face_id || order.checklist_sim_card) ? `
     <div class="section">
         <div class="section-title"><i class="fas fa-clipboard-check"></i> Checklist</div>
         <div class="checklist">
-            ${order.checklist_case ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Capa</div>' : ''}
-            ${order.checklist_screen_protector ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Película</div>' : ''}
-            ${order.checklist_camera ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Câmera</div>' : ''}
-            ${order.checklist_housing ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Carcaça</div>' : ''}
-            ${order.checklist_lens ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Lente</div>' : ''}
-            ${order.checklist_face_id ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Face ID</div>' : ''}
-            ${order.checklist_sim_card ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Chip</div>' : ''}
-            ${order.checklist_battery ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Bateria</div>' : ''}
-            ${order.checklist_charger ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Carregador</div>' : ''}
-            ${order.checklist_headphones ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Fone</div>' : ''}
+            ${order.checklist_lens ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Possui Lente' + (order.checklist_lens_condition ? ': ' + order.checklist_lens_condition : '') + '</div>' : ''}
+            ${order.checklist_back_cover ? '<div class="checklist-item"><i class="fas fa-info-circle"></i> Tampa: ' + order.checklist_back_cover + '</div>' : ''}
+            ${order.checklist_screen ? '<div class="checklist-item"><i class="fas fa-exclamation-triangle"></i> Tela Trincada</div>' : ''}
+            ${order.checklist_sim_card ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Possui Chip</div>' : ''}
+            ${order.checklist_face_id ? '<div class="checklist-item"><i class="fas fa-times-circle"></i> Sem Face ID</div>' : ''}
+            ${order.checklist_connector ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Conector</div>' : ''}
+            ${order.checklist_camera_front_back ? '<div class="checklist-item"><i class="fas fa-camera"></i> Câmera: ' + order.checklist_camera_front_back + '</div>' : ''}
         </div>
     </div>
     ` : ''}
@@ -1659,180 +1852,247 @@ function generateServiceOrderPrint(order, customer, warrantyTerms) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: Arial, sans-serif;
-            padding: 5px;
+            padding: 0;
+            background: white;
+            height: 100vh;
         }
         .container {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            width: 100%;
+            height: 100%;
             gap: 6px;
-            max-width: 100%;
         }
         .via {
             border: 2px solid #667eea;
-            padding: 5px;
+            padding: 6px;
             font-size: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         @media print {
             .container {
                 page-break-after: avoid;
+                height: 100vh;
             }
             .via {
                 page-break-inside: avoid;
+                height: 100%;
             }
         }
         .header {
-            text-align: center;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
             border-bottom: 2px solid #667eea;
-            padding-bottom: 3px;
+            padding-bottom: 4px;
+        }
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .header-left {
+            flex: 1;
+            text-align: center;
         }
         .logo {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: bold;
             color: #667eea;
-            margin-bottom: 1px;
+            margin-bottom: 2px;
         }
         .logo i {
-            margin-right: 3px;
+            margin-right: 4px;
         }
         .subtitle {
             color: #666;
-            font-size: 6.5px;
+            font-size: 8px;
         }
         .os-number {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
             color: #333;
-            margin: 2px 0;
+            margin: 3px 0;
+        }
+        .password-box {
+            border: 2px solid #333;
+            border-radius: 5px;
+            padding: 6px;
+            background: white;
+            min-width: 90px;
+            max-width: 90px;
+        }
+        .password-label {
+            font-size: 8px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            margin-bottom: 3px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 2px;
+        }
+        .password-text {
+            font-size: 9px;
+            font-weight: bold;
+            text-align: center;
+            color: #333;
+            min-height: 14px;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        .pattern-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 8px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            margin-bottom: 3px;
+        }
+        .pattern-dot {
+            width: 10px;
+            height: 10px;
+            border: 2px solid #333;
+            border-radius: 50%;
+            background: white;
+            margin: auto;
+        }
+        .password-footer {
+            font-size: 6px;
+            color: #666;
+            text-align: center;
+            font-style: italic;
         }
         .section {
-            margin-bottom: 4px;
+            margin-bottom: 5px;
         }
         .section-title {
             background: #667eea;
             color: white;
-            padding: 2px 5px;
+            padding: 3px 6px;
             font-weight: bold;
-            margin-bottom: 2px;
-            border-radius: 2px;
-            font-size: 7.5px;
+            margin-bottom: 3px;
+            border-radius: 3px;
+            font-size: 9px;
         }
         .info-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 3px;
+            gap: 4px;
         }
         .info-grid.single-column {
             grid-template-columns: 1fr;
         }
         .info-item {
-            padding: 1.5px 3px;
+            padding: 3px 5px;
             background: #f5f5f5;
-            border-left: 2px solid #667eea;
+            border-left: 3px solid #667eea;
         }
         .info-label {
-            font-size: 6.5px;
+            font-size: 7.5px;
             color: #666;
             text-transform: uppercase;
-            margin-bottom: 0.5px;
+            margin-bottom: 1px;
             font-weight: 600;
         }
         .info-value {
-            font-size: 8.5px;
+            font-size: 10px;
             color: #333;
             font-weight: 600;
-            line-height: 1.2;
+            line-height: 1.3;
         }
         .checklist {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 1.5px;
-            margin-top: 3px;
+            gap: 3px;
+            margin-top: 4px;
         }
         .checklist-item {
-            padding: 1.5px 3px;
+            padding: 3px 5px;
             background: #f9f9f9;
-            border-radius: 2px;
+            border-radius: 3px;
             display: flex;
             align-items: center;
-            font-size: 7.5px;
+            font-size: 8.5px;
         }
         .checklist-item i {
-            margin-right: 2px;
+            margin-right: 3px;
             color: #28a745;
-            font-size: 7.5px;
+            font-size: 8.5px;
         }
         .text-area {
             background: #f9f9f9;
-            padding: 3px;
-            border-radius: 2px;
-            min-height: 20px;
-            margin-top: 3px;
+            padding: 5px;
+            border-radius: 3px;
+            min-height: 25px;
+            margin-top: 4px;
             white-space: pre-wrap;
-            font-size: 7.5px;
-            line-height: 1.3;
+            font-size: 8.5px;
+            line-height: 1.4;
         }
         .warranty-section {
-            margin-top: 5px;
-            padding: 3px;
+            margin-top: 6px;
+            padding: 5px;
             background: #fffbf0;
-            border: 1px solid #ffc107;
-            border-radius: 2px;
+            border: 1.5px solid #ffc107;
+            border-radius: 3px;
         }
         .warranty-title {
-            font-size: 8px;
+            font-size: 9px;
             font-weight: bold;
             color: #856404;
             text-align: center;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
         .warranty-clause {
-            font-size: 6px;
-            line-height: 1.4;
-            margin-bottom: 1.5px;
+            font-size: 7px;
+            line-height: 1.5;
+            margin-bottom: 2px;
             text-align: justify;
         }
         .warranty-footer {
-            font-size: 6px;
+            font-size: 7px;
             text-align: center;
-            margin-top: 2px;
+            margin-top: 3px;
             font-style: italic;
             color: #856404;
         }
         .signature-area {
-            margin-top: 6px;
-            padding-top: 3px;
+            margin-top: 8px;
+            padding-top: 5px;
             border-top: 1px dashed #ccc;
         }
         .signature-line {
-            border-top: 1px solid #333;
-            margin: 6px 5px 1px;
-            padding-top: 1px;
+            border-top: 1.5px solid #333;
+            margin: 8px 10px 2px;
+            padding-top: 2px;
             text-align: center;
             color: #666;
-            font-size: 6.5px;
+            font-size: 8px;
         }
         .footer {
             text-align: center;
-            margin-top: 4px;
-            padding-top: 2px;
-            border-top: 1px solid #667eea;
+            margin-top: 5px;
+            padding-top: 3px;
+            border-top: 1.5px solid #667eea;
             color: #666;
-            font-size: 5.5px;
+            font-size: 7px;
         }
         .status-badge {
             display: inline-block;
-            padding: 1.5px 5px;
+            padding: 3px 8px;
             border-radius: 5px;
-            font-size: 7.5px;
+            font-size: 8.5px;
             font-weight: bold;
         }
         .via-label {
             text-align: center;
-            font-size: 8px;
+            font-size: 10px;
             font-weight: bold;
             color: #667eea;
-            margin-bottom: 3px;
+            margin-bottom: 5px;
             text-transform: uppercase;
         }
         .status-open { background: #ffc107; color: #000; }
@@ -1887,6 +2147,14 @@ document.addEventListener('keydown', function(e) {
         closeModal('editModal');
     }
 });
+
+// Função para mudar registros por página
+function changePerPage(perPage) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', 1); // Voltar para primeira página ao mudar quantidade
+    window.location.search = urlParams.toString();
+}
 </script>
 
 </body>

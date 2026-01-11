@@ -28,9 +28,9 @@ $PERMISSIONS = [
     ],
     'seller' => [
         'pdv' => ['view', 'create', 'edit', 'delete'],  // Pode fazer vendas completas
-        'service_orders' => ['view'],  // Apenas visualizar OS
-        'products' => ['view'],  // Apenas visualizar produtos
-        'customers' => ['view'],  // Apenas visualizar clientes
+        'service_orders' => ['view', 'create', 'edit'],  // Pode criar e editar OS (sem deletar)
+        'products' => ['view', 'create'],  // Pode visualizar e cadastrar produtos (sem editar/deletar)
+        'customers' => ['view', 'create', 'edit'],  // Pode visualizar, criar e editar clientes (sem deletar)
     ]
 ];
 

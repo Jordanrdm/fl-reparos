@@ -7,7 +7,11 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once('../../config/database.php');
+require_once('../../config/app.php');
 $conn = $database->getConnection();
+
+// Verificar permissão de visualização
+requirePermission('customers', 'view');
 
 // =============================
 // 🔧 CRUD
@@ -15,6 +19,7 @@ $conn = $database->getConnection();
 
 // Criar Cliente
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
+    requirePermission('customers', 'create');
     try {
         $stmt = $conn->prepare("INSERT INTO customers
             (name, cpf_cnpj, phone, email, address, city, state, zipcode, notes, created_at, updated_at)
@@ -39,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 
 // Editar Cliente
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
+    requirePermission('customers', 'edit');
     try {
         $stmt = $conn->prepare("UPDATE customers
             SET name=?, cpf_cnpj=?, phone=?, email=?, address=?, city=?, state=?, zipcode=?, notes=?, updated_at=NOW()
@@ -62,21 +68,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     }
 }
 
-// Excluir Cliente
+// Excluir Cliente (Soft Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
-    $id = (int) $_POST['id'];
-    $stmt = $conn->prepare("DELETE FROM customers WHERE id = ?");
-    $stmt->execute([$id]);
-    echo "<script>alert('Cliente excluído com sucesso!');window.location='index.php';</script>";
-    exit;
+    requirePermission('customers', 'delete');
+    try {
+        $id = (int) $_POST['id'];
+
+        // Soft delete: marca como deletado ao invés de remover do banco
+        $stmt = $conn->prepare("UPDATE customers SET deleted_at = NOW() WHERE id = ?");
+        $stmt->execute([$id]);
+
+        echo "<script>alert('Cliente excluído com sucesso!');window.location='index.php';</script>";
+        exit;
+
+    } catch (PDOException $e) {
+        $errorMsg = "Erro ao excluir cliente: " . htmlspecialchars($e->getMessage());
+        echo "<script>alert('" . addslashes($errorMsg) . "');window.location='index.php';</script>";
+        exit;
+    }
 }
 
 // =============================
-// 🔍 LISTAGEM E FILTRO
+// 🔍 LISTAGEM E FILTRO COM PAGINAÇÃO
 // =============================
 $search = $_GET['search'] ?? '';
 $filter_state = $_GET['state'] ?? '';
-$where = "WHERE 1=1";
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+
+// Validar valores permitidos de registros por página
+$allowedPerPage = [10, 20, 30, 50, 100];
+if (!in_array($perPage, $allowedPerPage)) {
+    $perPage = 20;
+}
+
+$where = "WHERE deleted_at IS NULL";  // Filtrar apenas clientes ativos (não deletados)
 $params = [];
 
 if (!empty($search)) {
@@ -92,11 +118,25 @@ if (!empty($filter_state)) {
     $params[] = $filter_state;
 }
 
+// Contar total de registros (para paginação)
+$stmtCount = $conn->prepare("SELECT COUNT(*) as total FROM customers $where");
+$stmtCount->execute($params);
+$totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
+$totalPages = ceil($totalRecords / $perPage);
+
+// Calcular OFFSET
+$offset = ($page - 1) * $perPage;
+
+// Buscar registros com paginação
 $stmt = $conn->prepare("
     SELECT * FROM customers
     $where
     ORDER BY name ASC
+    LIMIT ? OFFSET ?
 ");
+// Adicionar LIMIT e OFFSET aos parâmetros
+$params[] = $perPage;
+$params[] = $offset;
 $stmt->execute($params);
 $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -235,6 +275,95 @@ textarea.form-control {
     resize:vertical;
     min-height:80px;
 }
+
+/* Paginação */
+.pagination-container {
+    background:rgba(255,255,255,0.9);
+    backdrop-filter:blur(10px);
+    padding:15px 20px;
+    border-radius:15px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.15);
+    margin-top:15px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:15px;
+}
+.pagination-info {
+    color:#666;
+    font-size:0.9rem;
+    font-weight:500;
+}
+.pagination-controls {
+    display:flex;
+    align-items:center;
+    gap:20px;
+    flex-wrap:wrap;
+}
+.per-page-selector {
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+.per-page-selector label {
+    font-size:0.9rem;
+    color:#666;
+    font-weight:500;
+}
+.per-page-selector select {
+    padding:6px 10px;
+    border:2px solid #ddd;
+    border-radius:8px;
+    font-size:0.9rem;
+    cursor:pointer;
+}
+.pagination-nav {
+    display:flex;
+    gap:5px;
+}
+.pagination-btn {
+    padding:8px 12px;
+    border:2px solid #ddd;
+    border-radius:8px;
+    background:white;
+    color:#333;
+    text-decoration:none;
+    transition:all 0.3s;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:40px;
+    font-weight:500;
+}
+.pagination-btn:hover {
+    background:linear-gradient(45deg,#667eea,#764ba2);
+    color:white;
+    border-color:#667eea;
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(102,126,234,0.3);
+}
+.pagination-btn.active {
+    background:linear-gradient(45deg,#667eea,#764ba2);
+    color:white;
+    border-color:#667eea;
+}
+.pagination-btn i {
+    font-size:0.9rem;
+}
+@media (max-width: 768px) {
+    .pagination-container {
+        flex-direction:column;
+        align-items:stretch;
+    }
+    .pagination-controls {
+        flex-direction:column;
+        align-items:stretch;
+    }
+    .pagination-nav {
+        justify-content:center;
+    }
+}
 </style>
 </head>
 <body>
@@ -334,19 +463,76 @@ textarea.form-control {
                         <?php endif; ?>
                     </td>
                     <td>
+                        <?php if (hasPermission('customers', 'edit')): ?>
                         <button class="btn btn-secondary btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
                             <i class="fas fa-edit"></i>
                         </button>
+                        <?php endif; ?>
+                        <?php if (hasPermission('customers', 'delete')): ?>
                         <form method="POST" onsubmit="return confirm('Excluir este cliente?');" style="display:inline;">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $row['id'] ?>">
                             <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
                         </form>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; endif; ?>
             </tbody>
         </table>
+    </div>
+
+    <!-- PAGINAÇÃO -->
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Mostrando <?= min($offset + 1, $totalRecords) ?> a <?= min($offset + $perPage, $totalRecords) ?> de <?= $totalRecords ?> registros
+        </div>
+
+        <div class="pagination-controls">
+            <!-- Seletor de registros por página -->
+            <div class="per-page-selector">
+                <label>Registros por página:</label>
+                <select onchange="changePerPage(this.value)" class="form-control" style="width:auto;display:inline-block;">
+                    <?php foreach([10, 20, 30, 50, 100] as $option): ?>
+                        <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- Navegação de páginas -->
+            <div class="pagination-nav">
+                <?php if($page > 1): ?>
+                    <a href="?page=1&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&state=<?= urlencode($filter_state) ?>" class="pagination-btn">
+                        <i class="fas fa-angle-double-left"></i>
+                    </a>
+                    <a href="?page=<?= $page - 1 ?>&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&state=<?= urlencode($filter_state) ?>" class="pagination-btn">
+                        <i class="fas fa-angle-left"></i>
+                    </a>
+                <?php endif; ?>
+
+                <!-- Números de página -->
+                <?php
+                $startPage = max(1, $page - 2);
+                $endPage = min($totalPages, $page + 2);
+
+                for($i = $startPage; $i <= $endPage; $i++):
+                ?>
+                    <a href="?page=<?= $i ?>&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&state=<?= urlencode($filter_state) ?>"
+                       class="pagination-btn <?= $i == $page ? 'active' : '' ?>">
+                        <?= $i ?>
+                    </a>
+                <?php endfor; ?>
+
+                <?php if($page < $totalPages): ?>
+                    <a href="?page=<?= $page + 1 ?>&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&state=<?= urlencode($filter_state) ?>" class="pagination-btn">
+                        <i class="fas fa-angle-right"></i>
+                    </a>
+                    <a href="?page=<?= $totalPages ?>&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&state=<?= urlencode($filter_state) ?>" class="pagination-btn">
+                        <i class="fas fa-angle-double-right"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -515,6 +701,14 @@ function openEditModal(o){
     document.getElementById('edit_zipcode').value=o.zipcode||'';
     document.getElementById('edit_notes').value=o.notes||'';
     openModal('editModal');
+}
+
+// Função para mudar registros por página
+function changePerPage(perPage) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('per_page', perPage);
+    urlParams.set('page', 1); // Voltar para primeira página
+    window.location.search = urlParams.toString();
 }
 
 // Fechar modal ao clicar fora

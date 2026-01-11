@@ -125,15 +125,42 @@ if ($category_filter) {
 
 $where_clause = implode(' AND ', $where);
 
-// Buscar produtos
+// =============================
+// 📄 PAGINAÇÃO
+// =============================
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+
+// Validar valores permitidos de registros por página
+$allowedPerPage = [10, 20, 30, 50, 100];
+if (!in_array($perPage, $allowedPerPage)) {
+    $perPage = 20;
+}
+
+$offset = ($page - 1) * $perPage;
+
+// Contar total de registros
+$stmtCount = $pdo->prepare("
+    SELECT COUNT(*) as total
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE $where_clause
+");
+$stmtCount->execute($params);
+$totalRecords = $stmtCount->fetch()['total'];
+$totalPages = ceil($totalRecords / $perPage);
+
+// Buscar produtos com paginação
+$paramsWithPagination = array_merge($params, [$perPage, $offset]);
 $stmt = $pdo->prepare("
     SELECT p.*, c.name as category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE $where_clause
     ORDER BY p.name ASC
+    LIMIT ? OFFSET ?
 ");
-$stmt->execute($params);
+$stmt->execute($paramsWithPagination);
 $products = $stmt->fetchAll();
 
 // Buscar categorias
@@ -243,6 +270,96 @@ include '../../includes/header.php';
         .alert-info {background:#d1ecf1;color:#0c5460;border-left:4px solid #17a2b8;}
 
         .text-muted {color:#6c757d;font-size:0.85rem;}
+
+        /* Paginação */
+        .pagination-container {
+            background:rgba(255,255,255,0.9);
+            backdrop-filter:blur(10px);
+            padding:15px 20px;
+            border-radius:15px;
+            box-shadow:0 8px 32px rgba(0,0,0,0.15);
+            margin-bottom:20px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            flex-wrap:wrap;
+            gap:15px;
+        }
+        .pagination-info {
+            color:#666;
+            font-size:0.9rem;
+            font-weight:500;
+        }
+        .pagination-controls {
+            display:flex;
+            gap:20px;
+            align-items:center;
+            flex-wrap:wrap;
+        }
+        .per-page-selector {
+            display:flex;
+            gap:10px;
+            align-items:center;
+        }
+        .per-page-selector label {
+            color:#666;
+            font-size:0.9rem;
+            font-weight:500;
+        }
+        .per-page-selector select {
+            padding:8px 12px;
+            border:2px solid #ddd;
+            border-radius:8px;
+            background:white;
+            font-size:0.9rem;
+            cursor:pointer;
+            transition:all 0.3s;
+        }
+        .per-page-selector select:hover {
+            border-color:#667eea;
+        }
+        .per-page-selector select:focus {
+            border-color:#667eea;
+            outline:none;
+            box-shadow:0 0 0 3px rgba(102,126,234,0.1);
+        }
+        .pagination-buttons {
+            display:flex;
+            gap:10px;
+            align-items:center;
+        }
+        .pagination-btn {
+            padding:8px 15px;
+            border:2px solid #ddd;
+            border-radius:8px;
+            background:white;
+            color:#667eea;
+            text-decoration:none;
+            font-weight:500;
+            transition:all 0.3s;
+            display:inline-flex;
+            align-items:center;
+            gap:5px;
+            cursor:pointer;
+        }
+        .pagination-btn:hover:not(.disabled) {
+            background:linear-gradient(45deg,#667eea,#764ba2);
+            color:white;
+            border-color:transparent;
+            transform:translateY(-2px);
+            box-shadow:0 4px 12px rgba(102,126,234,0.3);
+        }
+        .pagination-btn.disabled {
+            background:#f5f5f5;
+            color:#ccc;
+            border-color:#f0f0f0;
+            cursor:not-allowed;
+        }
+        .page-info {
+            color:#666;
+            font-weight:500;
+            font-size:0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -251,7 +368,7 @@ include '../../includes/header.php';
         <div class="header">
             <h1><i class="fas fa-box"></i> Produtos</h1>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <?php if ($canCreate && $isAdmin): ?>
+                <?php if ($canCreate): ?>
                 <button class="btn btn-primary" onclick="openModal('createModal')">
                     <i class="fas fa-plus"></i> Novo Produto
                 </button>
@@ -324,6 +441,44 @@ include '../../includes/header.php';
             </form>
         </div>
 
+        <!-- Paginação -->
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Mostrando <?= min($offset + 1, $totalRecords) ?> a <?= min($offset + $perPage, $totalRecords) ?> de <?= $totalRecords ?> registros
+            </div>
+
+            <div class="pagination-controls">
+                <div class="per-page-selector">
+                    <label>Registros por página:</label>
+                    <select onchange="changePerPage(this.value)">
+                        <?php foreach($allowedPerPage as $option): ?>
+                            <option value="<?= $option ?>" <?= $perPage == $option ? 'selected' : '' ?>><?= $option ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="pagination-buttons">
+                    <?php if($page > 1): ?>
+                        <a href="?page=<?= $page - 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?>" class="pagination-btn">
+                            <i class="fas fa-chevron-left"></i> Anterior
+                        </a>
+                    <?php else: ?>
+                        <span class="pagination-btn disabled"><i class="fas fa-chevron-left"></i> Anterior</span>
+                    <?php endif; ?>
+
+                    <span class="page-info">Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
+
+                    <?php if($page < $totalPages): ?>
+                        <a href="?page=<?= $page + 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?>" class="pagination-btn">
+                            Próxima <i class="fas fa-chevron-right"></i>
+                        </a>
+                    <?php else: ?>
+                        <span class="pagination-btn disabled">Próxima <i class="fas fa-chevron-right"></i></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
         <!-- Tabela -->
         <table class="table">
                 <thead>
@@ -372,14 +527,17 @@ include '../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if ($isAdmin): ?>
+                            <?php if ($canEdit): ?>
                             <button class="btn btn-sm btn-info" onclick='openEditModal(<?= json_encode($product) ?>)' title="Editar">
                                 <i class="fas fa-edit"></i>
                             </button>
+                            <?php endif; ?>
+                            <?php if ($canDelete): ?>
                             <button class="btn btn-sm btn-danger" onclick="deleteProduct(<?= $product['id'] ?>)" title="Excluir">
                                 <i class="fas fa-trash"></i>
                             </button>
-                            <?php else: ?>
+                            <?php endif; ?>
+                            <?php if (!$canEdit && !$canDelete): ?>
                             <button class="btn btn-sm btn-info" onclick='openViewModal(<?= json_encode($product) ?>)' title="Visualizar">
                                 <i class="fas fa-eye"></i>
                             </button>
@@ -393,7 +551,7 @@ include '../../includes/header.php';
     </div>
 
     <!-- Modal Criar -->
-    <?php if ($isAdmin): ?>
+    <?php if ($canCreate): ?>
     <div id="createModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -675,6 +833,14 @@ include '../../includes/header.php';
                 closeModal('viewModal');
             }
         });
+
+        // Função para mudar registros por página
+        function changePerPage(perPage) {
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('per_page', perPage);
+            urlParams.set('page', 1); // Voltar para primeira página ao mudar quantidade
+            window.location.search = urlParams.toString();
+        }
     </script>
 </body>
 </html>
