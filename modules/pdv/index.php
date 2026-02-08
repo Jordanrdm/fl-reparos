@@ -218,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 
 // Buscar clientes para autocomplete (apenas clientes ativos)
 try {
-    $stmt = $pdo->prepare("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC LIMIT 100");
+    $stmt = $pdo->prepare("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC");
     $stmt->execute();
     $customers = $stmt->fetchAll();
 } catch (PDOException $e) {
@@ -619,21 +619,32 @@ try {
             left: 0;
             right: 0;
             background: white;
-            border: 1px solid #ccc;
+            border: 2px solid #667eea;
             border-top: none;
-            max-height: 200px;
+            max-height: 250px;
             overflow-y: auto;
             z-index: 1000;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
         }
 
         .autocomplete-suggestion {
-            padding: 10px;
+            padding: 10px 12px;
             cursor: pointer;
             border-bottom: 1px solid #eee;
+            transition: background 0.2s;
         }
 
         .autocomplete-suggestion:hover {
-            background: #f5f5f5;
+            background: linear-gradient(45deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
+        }
+
+        .autocomplete-suggestion .customer-details {
+            display: flex;
+            gap: 10px;
+            color: #888;
+            font-size: 12px;
+            margin-top: 2px;
         }
 
         /* ===== NOVAS MELHORIAS PARA PAGAMENTOS ===== */
@@ -1217,7 +1228,7 @@ try {
                        onfocus="if(this.value=='0') this.value=''"
                        onblur="handleDiscountChange()">
                 <small style="color: #666; display: block; margin-top: 2px; font-size: 11px;">
-                    <i class="fas fa-info-circle"></i> Desconto acima de 5% requer senha de gerente/admin
+                    <i class="fas fa-info-circle"></i> <?php echo ($_SESSION['user_role'] === 'admin') ? 'Desconto livre (Administrador)' : 'Desconto acima de 5% requer senha de gerente/admin'; ?>
                 </small>
             </div>
 
@@ -1408,6 +1419,7 @@ try {
         let payments = []; // Array para múltiplas formas de pagamento
         let discountAuthorized = false; // Flag para controle de autorização de desconto
         let lastValidDiscount = 0; // Último desconto válido
+        const userRole = '<?php echo $_SESSION['user_role'] ?? 'seller'; ?>';
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
@@ -1545,7 +1557,16 @@ try {
                 return;
             }
 
-            // Se desconto > 5%, pedir senha
+            // Se usuário é admin, autorizar desconto livre sem pedir senha
+            if (userRole === 'admin') {
+                lastValidDiscount = discountPercentage;
+                discountAuthorized = true;
+                updateCartDisplay();
+                showAlert(`Desconto de ${discountPercentage.toFixed(1)}% aplicado (Admin)`, 'success');
+                return;
+            }
+
+            // Se desconto > 5% e NÃO é admin, pedir senha
             const authorized = await requestDiscountAuthorization(discountPercentage);
 
             if (authorized) {
@@ -2247,33 +2268,45 @@ try {
             const input = document.getElementById('customerSearch');
             const suggestions = document.getElementById('customerSuggestions');
 
-            input.addEventListener('input', function() {
-                const query = this.value.toLowerCase().trim();
-
-                if (query.length < 1) {
-                    suggestions.style.display = 'none';
-                    return;
+            function renderCustomerList(query) {
+                let filtered;
+                if (!query || query.length === 0) {
+                    filtered = customers;
+                } else {
+                    const q = query.toLowerCase();
+                    filtered = customers.filter(customer =>
+                        customer.name.toLowerCase().includes(q) ||
+                        (customer.cpf_cnpj && customer.cpf_cnpj.includes(q)) ||
+                        (customer.phone && customer.phone.includes(q))
+                    );
                 }
 
-                const filtered = customers.filter(customer => 
-                    customer.name.toLowerCase().includes(query) ||
-                    customer.cpf_cnpj.includes(query) ||
-                    customer.phone.includes(query)
-                );
-
                 if (filtered.length > 0) {
+                    const escapeName = (name) => name.replace(/'/g, "\\'");
                     const html = filtered.map(customer => `
-                        <div class="autocomplete-suggestion" onclick="selectCustomer(${customer.id}, '${customer.name}')">
-                            <strong>${customer.name}</strong><br>
-                            <small>${customer.cpf_cnpj} - ${customer.phone}</small>
+                        <div class="autocomplete-suggestion" onclick="selectCustomer(${customer.id}, '${escapeName(customer.name)}')">
+                            <strong>${customer.name}</strong>
+                            <div class="customer-details">
+                                ${customer.cpf_cnpj ? `<span><i class="fas fa-id-card"></i> ${customer.cpf_cnpj}</span>` : ''}
+                                ${customer.phone ? `<span><i class="fas fa-phone"></i> ${customer.phone}</span>` : ''}
+                            </div>
                         </div>
                     `).join('');
-                    
                     suggestions.innerHTML = html;
                     suggestions.style.display = 'block';
                 } else {
-                    suggestions.style.display = 'none';
+                    suggestions.innerHTML = '<div style="padding:12px;color:#999;text-align:center;">Nenhum cliente encontrado</div>';
+                    suggestions.style.display = 'block';
                 }
+            }
+
+            // Mostrar todos os clientes ao focar no campo
+            input.addEventListener('focus', function() {
+                renderCustomerList(this.value.trim());
+            });
+
+            input.addEventListener('input', function() {
+                renderCustomerList(this.value.trim());
             });
 
             // Fechar sugestões ao clicar fora

@@ -371,7 +371,11 @@ $stmt->execute($paramsWithPagination);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Buscar clientes para o formulário (apenas clientes ativos)
-$customers = $conn->query("SELECT id, name, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$customers = $conn->query("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Buscar técnicos e atendentes cadastrados
+$technicians = $conn->query("SELECT id, name FROM technicians WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$attendants = $conn->query("SELECT id, name FROM attendants WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Buscar produtos para o formulário
 $products = $conn->query("SELECT id, name, sale_price as price, stock_quantity FROM products WHERE stock_quantity > 0 AND active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
@@ -614,6 +618,23 @@ tr:hover {background:rgba(103,58,183,0.1);}
     font-weight:500;
     font-size:0.9rem;
 }
+.os-autocomplete-suggestions {
+    position:absolute;top:100%;left:0;right:0;background:#fff;
+    border:2px solid #667eea;border-top:none;max-height:220px;overflow-y:auto;
+    z-index:2000;border-radius:0 0 10px 10px;box-shadow:0 8px 20px rgba(0,0,0,0.15);
+}
+.os-autocomplete-suggestions .os-suggestion {
+    padding:10px 12px;cursor:pointer;border-bottom:1px solid #eee;transition:background 0.2s;
+}
+.os-autocomplete-suggestions .os-suggestion:hover {
+    background:linear-gradient(45deg,rgba(102,126,234,0.1),rgba(118,75,162,0.1));
+}
+.os-autocomplete-suggestions .os-suggestion .details {
+    display:flex;gap:10px;color:#888;font-size:12px;margin-top:2px;
+}
+.os-autocomplete-suggestions .os-no-results {
+    padding:12px;color:#999;text-align:center;font-style:italic;
+}
 </style>
 </head>
 <body>
@@ -793,12 +814,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <div class="form-row">
                 <div class="form-group">
                     <label>Cliente *</label>
-                    <select name="customer_id" class="form-control" required>
-                        <option value="">Selecione</option>
-                        <?php foreach($customers as $c): ?>
-                            <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <div style="position:relative;">
+                        <input type="text" id="createCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
+                        <input type="hidden" name="customer_id" id="createCustomerId" required>
+                        <div id="createCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Aparelho *</label>
@@ -1033,11 +1053,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <div class="form-row">
                 <div class="form-group">
                     <label>Técnico Responsável</label>
-                    <input type="text" name="technician_name" class="form-control">
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
+                        <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Atendente Responsável</label>
-                    <input type="text" name="attendant_name" class="form-control">
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
+                        <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1095,12 +1121,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <div class="form-row">
                 <div class="form-group">
                     <label>Cliente *</label>
-                    <select name="customer_id" id="edit_customer_id" class="form-control" required>
-                        <option value="">Selecione</option>
-                        <?php foreach($customers as $c): ?>
-                            <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <div style="position:relative;">
+                        <input type="text" id="editCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
+                        <input type="hidden" name="customer_id" id="edit_customer_id" required>
+                        <div id="editCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Aparelho *</label>
@@ -1284,11 +1309,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <div class="form-row">
                 <div class="form-group">
                     <label>Técnico Responsável</label>
-                    <input type="text" name="technician_name" id="edit_technician_name" class="form-control">
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
+                        <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Atendente Responsável</label>
-                    <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control">
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
+                        <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1363,8 +1394,103 @@ tr:hover {background:rgba(103,58,183,0.1);}
 </div>
 
 <script>
+// Dados para autocomplete
+const osCustomers = <?php echo json_encode($customers); ?>;
+const osTechnicians = <?php echo json_encode($technicians); ?>;
+const osAttendants = <?php echo json_encode($attendants); ?>;
+
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}
+
+// ===== AUTOCOMPLETE GENÉRICO =====
+function setupOsAutocomplete(inputId, suggestionsId, dataList, options = {}) {
+    const input = document.getElementById(inputId);
+    const suggestions = document.getElementById(suggestionsId);
+    if (!input || !suggestions) return;
+
+    const { onSelect, showDetails, hiddenInputId } = options;
+
+    function render(query) {
+        let filtered;
+        if (!query || query.length === 0) {
+            filtered = dataList;
+        } else {
+            const q = query.toLowerCase();
+            filtered = dataList.filter(item => {
+                let match = item.name.toLowerCase().includes(q);
+                if (item.cpf_cnpj) match = match || item.cpf_cnpj.includes(q);
+                if (item.phone) match = match || item.phone.includes(q);
+                return match;
+            });
+        }
+
+        if (filtered.length > 0) {
+            const html = filtered.map(item => {
+                const escapedName = item.name.replace(/'/g, "\\'");
+                let detailsHtml = '';
+                if (showDetails && (item.cpf_cnpj || item.phone)) {
+                    detailsHtml = `<div class="details">
+                        ${item.cpf_cnpj ? `<span><i class="fas fa-id-card"></i> ${item.cpf_cnpj}</span>` : ''}
+                        ${item.phone ? `<span><i class="fas fa-phone"></i> ${item.phone}</span>` : ''}
+                    </div>`;
+                }
+                return `<div class="os-suggestion" data-id="${item.id}" data-name="${escapedName}">
+                    <strong>${item.name}</strong>${detailsHtml}
+                </div>`;
+            }).join('');
+            suggestions.innerHTML = html;
+            suggestions.style.display = 'block';
+
+            // Adicionar click handlers
+            suggestions.querySelectorAll('.os-suggestion').forEach(el => {
+                el.addEventListener('click', function() {
+                    const id = this.dataset.id;
+                    const name = this.dataset.name;
+                    input.value = name;
+                    if (hiddenInputId) {
+                        document.getElementById(hiddenInputId).value = id;
+                    }
+                    suggestions.style.display = 'none';
+                    if (onSelect) onSelect(id, name);
+                });
+            });
+        } else {
+            suggestions.innerHTML = '<div class="os-no-results">Nenhum resultado encontrado</div>';
+            suggestions.style.display = 'block';
+        }
+    }
+
+    input.addEventListener('focus', () => render(input.value.trim()));
+    input.addEventListener('input', () => render(input.value.trim()));
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+            suggestions.style.display = 'none';
+        }
+    });
+}
+
+// Inicializar autocompletes quando DOM estiver pronto
+document.addEventListener('DOMContentLoaded', function() {
+    // Autocomplete de cliente (criar OS)
+    setupOsAutocomplete('createCustomerSearch', 'createCustomerSuggestions', osCustomers, {
+        showDetails: true,
+        hiddenInputId: 'createCustomerId'
+    });
+
+    // Autocomplete de cliente (editar OS)
+    setupOsAutocomplete('editCustomerSearch', 'editCustomerSuggestions', osCustomers, {
+        showDetails: true,
+        hiddenInputId: 'edit_customer_id'
+    });
+
+    // Autocomplete de técnicos
+    setupOsAutocomplete('createTechnicianSearch', 'createTechnicianSuggestions', osTechnicians, {});
+    setupOsAutocomplete('edit_technician_name', 'editTechnicianSuggestions', osTechnicians, {});
+
+    // Autocomplete de atendentes
+    setupOsAutocomplete('createAttendantSearch', 'createAttendantSuggestions', osAttendants, {});
+    setupOsAutocomplete('edit_attendant_name', 'editAttendantSuggestions', osAttendants, {});
+});
 
 function toggleInstallments(mode) {
     const paymentSelect = document.getElementById(mode + '_payment_method');
@@ -1500,6 +1626,9 @@ function openEditModal(o){
     // Dados básicos
     document.getElementById('edit_id').value=o.id;
     document.getElementById('edit_customer_id').value=o.customer_id||'';
+    // Preencher nome do cliente no autocomplete
+    const customer = osCustomers.find(c => c.id == o.customer_id);
+    document.getElementById('editCustomerSearch').value = customer ? customer.name : (o.customer_name || '');
     document.getElementById('edit_device').value=o.device||'';
     document.getElementById('edit_status').value=o.status||'open';
     document.getElementById('edit_total_cost').value=o.total_cost||'';

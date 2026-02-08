@@ -114,6 +114,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
 }
 
 // =============================
+// 🔧 CRUD Técnicos
+// =============================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_technician') {
+    $stmt = $conn->prepare("INSERT INTO technicians (name, phone, specialty) VALUES (?, ?, ?)");
+    $stmt->execute([$_POST['name'], $_POST['phone'] ?? null, $_POST['specialty'] ?? null]);
+    echo "<script>alert('Técnico cadastrado com sucesso!');window.location='index.php?tab=technicians';</script>";
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_technician') {
+    $conn->prepare("UPDATE technicians SET active = 0 WHERE id = ?")->execute([$_POST['id']]);
+    echo "<script>alert('Técnico removido!');window.location='index.php?tab=technicians';</script>";
+    exit;
+}
+
+// =============================
+// 🔧 CRUD Atendentes
+// =============================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_attendant') {
+    $stmt = $conn->prepare("INSERT INTO attendants (name, phone) VALUES (?, ?)");
+    $stmt->execute([$_POST['name'], $_POST['phone'] ?? null]);
+    echo "<script>alert('Atendente cadastrado com sucesso!');window.location='index.php?tab=attendants';</script>";
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_attendant') {
+    $conn->prepare("UPDATE attendants SET active = 0 WHERE id = ?")->execute([$_POST['id']]);
+    echo "<script>alert('Atendente removido!');window.location='index.php?tab=attendants';</script>";
+    exit;
+}
+
+// =============================
 // 🔍 LISTAGEM E FILTRO
 // =============================
 $search = $_GET['search'] ?? '';
@@ -149,11 +179,17 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // =============================
 // 📊 ESTATÍSTICAS
 // =============================
-$total_users = $conn->query("SELECT COUNT(*) as total FROM users")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_admins = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'admin'")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_managers = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'manager'")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_sellers = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'seller'")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_active = $conn->query("SELECT COUNT(*) as total FROM users WHERE status = 'active'")->fetch(PDO::FETCH_ASSOC)['total'];
+$total_users = $conn->query("SELECT COUNT(*) as total FROM users WHERE deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC)['total'];
+$total_admins = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'admin' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC)['total'];
+$total_managers = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'manager' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC)['total'];
+$total_sellers = $conn->query("SELECT COUNT(*) as total FROM users WHERE role = 'seller' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC)['total'];
+$total_active = $conn->query("SELECT COUNT(*) as total FROM users WHERE status = 'active' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC)['total'];
+
+// Buscar técnicos e atendentes
+$technicians = $conn->query("SELECT * FROM technicians WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$attendants_list = $conn->query("SELECT * FROM attendants WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+$activeTab = $_GET['tab'] ?? 'users';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -299,11 +335,31 @@ tr:hover {background:rgba(103,58,183,0.1);}
     <div class="header">
         <h1><i class="fas fa-users-cog"></i> Gerenciar Usuários</h1>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-primary" onclick="openModal('createModal')"><i class="fas fa-user-plus"></i> Novo Usuário</button>
+            <?php if($activeTab === 'users'): ?>
+                <button class="btn btn-primary" onclick="openModal('createModal')"><i class="fas fa-user-plus"></i> Novo Usuário</button>
+            <?php elseif($activeTab === 'technicians'): ?>
+                <button class="btn btn-primary" onclick="openModal('createTechModal')"><i class="fas fa-user-plus"></i> Novo Técnico</button>
+            <?php elseif($activeTab === 'attendants'): ?>
+                <button class="btn btn-primary" onclick="openModal('createAttModal')"><i class="fas fa-user-plus"></i> Novo Atendente</button>
+            <?php endif; ?>
             <a href="../../index.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
     </div>
 
+    <!-- Abas -->
+    <div style="display:flex;gap:10px;margin-bottom:20px;">
+        <a href="?tab=users" class="btn <?= $activeTab === 'users' ? 'btn-primary' : 'btn-secondary' ?>" style="<?= $activeTab === 'users' ? '' : 'opacity:0.7;' ?>">
+            <i class="fas fa-users"></i> Usuários
+        </a>
+        <a href="?tab=technicians" class="btn <?= $activeTab === 'technicians' ? 'btn-primary' : 'btn-secondary' ?>" style="<?= $activeTab === 'technicians' ? '' : 'opacity:0.7;' ?>">
+            <i class="fas fa-tools"></i> Técnicos (<?= count($technicians) ?>)
+        </a>
+        <a href="?tab=attendants" class="btn <?= $activeTab === 'attendants' ? 'btn-primary' : 'btn-secondary' ?>" style="<?= $activeTab === 'attendants' ? '' : 'opacity:0.7;' ?>">
+            <i class="fas fa-headset"></i> Atendentes (<?= count($attendants_list) ?>)
+        </a>
+    </div>
+
+    <?php if($activeTab === 'users'): ?>
     <div class="stats-box">
         <div class="stats-grid">
             <div class="stat-card blue">
@@ -415,6 +471,139 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <?php endforeach; endif; ?>
             </tbody>
         </table>
+    </div>
+    <?php endif; // fim tab users ?>
+
+    <?php if($activeTab === 'technicians'): ?>
+    <!-- SEÇÃO TÉCNICOS -->
+    <div class="table-box">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Telefone</th>
+                    <th>Especialidade</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if(empty($technicians)): ?>
+                    <tr><td colspan="5" class="empty">Nenhum técnico cadastrado.</td></tr>
+                <?php else: foreach($technicians as $tech): ?>
+                <tr>
+                    <td><?= $tech['id'] ?></td>
+                    <td><strong><?= htmlspecialchars($tech['name']) ?></strong></td>
+                    <td><?= htmlspecialchars($tech['phone'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($tech['specialty'] ?? '-') ?></td>
+                    <td>
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Remover este técnico?');">
+                            <input type="hidden" name="action" value="delete_technician">
+                            <input type="hidden" name="id" value="<?= $tech['id'] ?>">
+                            <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
+    <?php if($activeTab === 'attendants'): ?>
+    <!-- SEÇÃO ATENDENTES -->
+    <div class="table-box">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Telefone</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if(empty($attendants_list)): ?>
+                    <tr><td colspan="4" class="empty">Nenhum atendente cadastrado.</td></tr>
+                <?php else: foreach($attendants_list as $att): ?>
+                <tr>
+                    <td><?= $att['id'] ?></td>
+                    <td><strong><?= htmlspecialchars($att['name']) ?></strong></td>
+                    <td><?= htmlspecialchars($att['phone'] ?? '-') ?></td>
+                    <td>
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Remover este atendente?');">
+                            <input type="hidden" name="action" value="delete_attendant">
+                            <input type="hidden" name="id" value="<?= $att['id'] ?>">
+                            <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- MODAL NOVO TÉCNICO -->
+<div id="createTechModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-tools"></i> Novo Técnico</h2>
+            <button class="close" onclick="closeModal('createTechModal')">&times;</button>
+        </div>
+        <form method="POST">
+            <input type="hidden" name="action" value="add_technician">
+            <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                    <label>Nome Completo *</label>
+                    <input type="text" name="name" class="form-control" required placeholder="Nome do técnico">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
+                </div>
+                <div class="form-group">
+                    <label>Especialidade</label>
+                    <input type="text" name="specialty" class="form-control" placeholder="Ex: Telas, Baterias, Placas...">
+                </div>
+            </div>
+            <div style="text-align:right;margin-top:20px;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('createTechModal')"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL NOVO ATENDENTE -->
+<div id="createAttModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-headset"></i> Novo Atendente</h2>
+            <button class="close" onclick="closeModal('createAttModal')">&times;</button>
+        </div>
+        <form method="POST">
+            <input type="hidden" name="action" value="add_attendant">
+            <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                    <label>Nome Completo *</label>
+                    <input type="text" name="name" class="form-control" required placeholder="Nome do atendente">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
+                </div>
+            </div>
+            <div style="text-align:right;margin-top:20px;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('createAttModal')"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </form>
     </div>
 </div>
 

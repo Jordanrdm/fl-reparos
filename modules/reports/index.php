@@ -7,7 +7,30 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once('../../config/database.php');
+require_once('../../config/permissions.php');
 $conn = $database->getConnection();
+
+// Ação: Deletar venda (somente admin)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_sale' && isAdmin()) {
+    try {
+        $saleId = (int)$_POST['sale_id'];
+        // Deletar itens da venda
+        $conn->prepare("DELETE FROM sale_items WHERE sale_id = ?")->execute([$saleId]);
+        // Deletar registro do cash_flow
+        $conn->prepare("DELETE FROM cash_flow WHERE reference_type = 'sale' AND reference_id = ?")->execute([$saleId]);
+        // Deletar a venda
+        $conn->prepare("DELETE FROM sales WHERE id = ?")->execute([$saleId]);
+
+        // Redirecionar mantendo os filtros
+        $redirectUrl = "index.php?type=sales&date_from=" . urlencode($_POST['date_from'] ?? date('Y-m-01')) .
+                       "&date_to=" . urlencode($_POST['date_to'] ?? date('Y-m-d')) .
+                       "&msg=sale_deleted";
+        header("Location: $redirectUrl");
+        exit;
+    } catch (PDOException $e) {
+        $errorMsg = 'Erro ao deletar venda: ' . $e->getMessage();
+    }
+}
 
 // =============================
 // 📅 FILTROS
@@ -570,6 +593,12 @@ tr:hover {background:rgba(103,58,183,0.1);}
 </head>
 <body>
 <div class="container">
+    <?php if(isset($_GET['msg']) && $_GET['msg'] === 'sale_deleted'): ?>
+        <div style="background:linear-gradient(45deg,#4CAF50,#45a049);color:#fff;padding:15px 20px;border-radius:10px;margin-bottom:20px;">
+            <i class="fas fa-check-circle"></i> Venda deletada com sucesso!
+        </div>
+    <?php endif; ?>
+
     <div class="header">
         <h1><i class="fas fa-chart-bar"></i> Relatórios</h1>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -727,11 +756,12 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <th>Vendedor</th>
                         <th>Desconto</th>
                         <th>Valor Final</th>
+                        <?php if(isAdmin()): ?><th>Ações</th><?php endif; ?>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if(empty($data)): ?>
-                        <tr><td colspan="6" class="empty">Nenhuma venda encontrada no período.</td></tr>
+                        <tr><td colspan="<?= isAdmin() ? 7 : 6 ?>" class="empty">Nenhuma venda encontrada no período.</td></tr>
                     <?php else: foreach($data as $row): ?>
                     <tr>
                         <td><?= $row['id'] ?></td>
@@ -740,6 +770,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <td><?= htmlspecialchars($row['user_name']) ?></td>
                         <td>R$ <?= number_format($row['discount'], 2, ',', '.') ?></td>
                         <td><strong>R$ <?= number_format($row['final_amount'], 2, ',', '.') ?></strong></td>
+                        <?php if(isAdmin()): ?>
+                        <td>
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('Tem certeza que deseja DELETAR a venda #<?= $row['id'] ?>?\nEssa ação não pode ser desfeita!');">
+                                <input type="hidden" name="action" value="delete_sale">
+                                <input type="hidden" name="sale_id" value="<?= $row['id'] ?>">
+                                <input type="hidden" name="date_from" value="<?= $date_from ?>">
+                                <input type="hidden" name="date_to" value="<?= $date_to ?>">
+                                <button type="submit" class="btn btn-danger btn-sm" title="Deletar venda"><i class="fas fa-trash-alt"></i></button>
+                            </form>
+                        </td>
+                        <?php endif; ?>
                     </tr>
                     <?php endforeach; endif; ?>
                 </tbody>
