@@ -19,7 +19,7 @@ if (!$id) {
 }
 
 try {
-    $stmt = $conn->prepare("SELECT id, name, email, phone, address FROM customers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT id, name, email, phone, cpf_cnpj, address, neighborhood FROM customers WHERE id = ?");
     $stmt->execute([$id]);
     $customer = $stmt->fetch();
 

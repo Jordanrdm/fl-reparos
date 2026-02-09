@@ -158,10 +158,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                 $barcode = $_POST['barcode'] ?? '';
                 $code = !empty($_POST['code']) ? $_POST['code'] : $barcode;
 
-                $costPrice = (float)$_POST['cost_price'];
-                $salePrice = (float)$_POST['sale_price'];
-                $profit = $salePrice - $costPrice;
-                $margin = $costPrice > 0 ? round((($salePrice - $costPrice) / $costPrice) * 100, 2) : 0;
+                $costPrice = ($_POST['cost_price'] ?? '') !== '' ? (float)$_POST['cost_price'] : null;
+                $salePrice = ($_POST['sale_price'] ?? '') !== '' ? (float)$_POST['sale_price'] : null;
+                $profit = ($costPrice !== null && $salePrice !== null) ? $salePrice - $costPrice : null;
+                $margin = ($costPrice !== null && $costPrice > 0 && $salePrice !== null) ? round((($salePrice - $costPrice) / $costPrice) * 100, 2) : 0;
 
                 // Upload de imagem
                 $imageName = null;
@@ -175,13 +175,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                     }
                 }
 
+                $type = $_POST['type'] ?? 'product';
                 $stmt = $pdo->prepare("
-                    INSERT INTO products (name, image, code, barcode, category_id, cost_price, sale_price, unit,
+                    INSERT INTO products (type, name, image, code, barcode, category_id, cost_price, sale_price, unit,
                                         margin_percent, profit, supplier, warranty, observations,
                                         stock_quantity, min_stock, description, allow_price_edit, active, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
                 ");
                 $stmt->execute([
+                    $type,
                     $_POST['name'],
                     $imageName,
                     $code,
@@ -195,12 +197,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                     $_POST['supplier'] ?? null,
                     $_POST['warranty'] ?? null,
                     $_POST['observations'] ?? null,
-                    $_POST['stock_quantity'] ?? 0,
+                    $type === 'service' ? 999 : ($_POST['stock_quantity'] ?? 0),
                     $_POST['min_stock'] ?? 0,
                     $_POST['description'] ?? '',
                     isset($_POST['allow_price_edit']) ? 1 : 0
                 ]);
-                $message = '✓ Produto criado com sucesso!';
+                $message = $type === 'service' ? '✓ Serviço criado com sucesso!' : '✓ Produto criado com sucesso!';
                 $message_type = 'success';
                 break;
 
@@ -275,7 +277,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                     $_POST['id']
                 ]);
                 $stmt->execute($params);
-                $message = '✓ Produto atualizado com sucesso!';
+                // Verificar tipo para mensagem
+                $checkType = $pdo->prepare("SELECT type FROM products WHERE id=?");
+                $checkType->execute([$_POST['id']]);
+                $itemType = $checkType->fetchColumn() ?: 'product';
+                $message = $itemType === 'service' ? '✓ Serviço atualizado com sucesso!' : '✓ Produto atualizado com sucesso!';
                 $message_type = 'success';
                 break;
 
@@ -313,6 +319,7 @@ $stats = $pdo->query("
 // =============================
 $search = $_GET['search'] ?? '';
 $category_filter = $_GET['category'] ?? '';
+$type_filter = $_GET['type'] ?? '';
 
 $where = ["p.active = 1"];
 $params = [];
@@ -327,6 +334,11 @@ if ($search) {
 if ($category_filter) {
     $where[] = "p.category_id = ?";
     $params[] = $category_filter;
+}
+
+if ($type_filter) {
+    $where[] = "p.type = ?";
+    $params[] = $type_filter;
 }
 
 $where_clause = implode(' AND ', $where);
@@ -572,11 +584,14 @@ include '../../includes/header.php';
     <div class="container">
         <!-- Cabeçalho -->
         <div class="header">
-            <h1><i class="fas fa-box"></i> Produtos</h1>
+            <h1><i class="fas fa-box"></i> Produtos e Serviços</h1>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <?php if ($canCreate): ?>
-                <button class="btn btn-primary" onclick="openModal('createModal')">
+                <button class="btn btn-primary" onclick="resetCreateModal(); openModal('createModal')">
                     <i class="fas fa-plus"></i> Novo Produto
+                </button>
+                <button class="btn btn-primary" onclick="openCreateService()" style="background:linear-gradient(45deg,#4CAF50,#45a049);">
+                    <i class="fas fa-tools"></i> Novo Serviço
                 </button>
                 <?php endif; ?>
                 <a href="?export=csv" class="btn btn-primary" style="background:#00b894;">
@@ -644,6 +659,14 @@ include '../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="filter-group">
+                    <label><i class="fas fa-layer-group"></i> Tipo</label>
+                    <select name="type" class="form-control">
+                        <option value="">Todos</option>
+                        <option value="product" <?= $type_filter === 'product' ? 'selected' : '' ?>>Produtos</option>
+                        <option value="service" <?= $type_filter === 'service' ? 'selected' : '' ?>>Serviços</option>
+                    </select>
+                </div>
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-filter"></i> Filtrar
@@ -673,7 +696,7 @@ include '../../includes/header.php';
 
                 <div class="pagination-buttons">
                     <?php if($page > 1): ?>
-                        <a href="?page=<?= $page - 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?>" class="pagination-btn">
+                        <a href="?page=<?= $page - 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?><?= !empty($type_filter) ? '&type=' . urlencode($type_filter) : '' ?>" class="pagination-btn">
                             <i class="fas fa-chevron-left"></i> Anterior
                         </a>
                     <?php else: ?>
@@ -683,7 +706,7 @@ include '../../includes/header.php';
                     <span class="page-info">Página <?= $page ?> de <?= max(1, $totalPages) ?></span>
 
                     <?php if($page < $totalPages): ?>
-                        <a href="?page=<?= $page + 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?>" class="pagination-btn">
+                        <a href="?page=<?= $page + 1 ?>&per_page=<?= $perPage ?><?= !empty($search) ? '&search=' . urlencode($search) : '' ?><?= !empty($category_filter) ? '&category=' . urlencode($category_filter) : '' ?><?= !empty($type_filter) ? '&type=' . urlencode($type_filter) : '' ?>" class="pagination-btn">
                             Próxima <i class="fas fa-chevron-right"></i>
                         </a>
                     <?php else: ?>
@@ -698,6 +721,7 @@ include '../../includes/header.php';
                 <thead>
                     <tr>
                         <th style="width:50px;">Foto</th>
+                        <th>Tipo</th>
                         <th>Cód. Barras</th>
                         <th>Nome</th>
                         <th>Categoria</th>
@@ -711,7 +735,7 @@ include '../../includes/header.php';
                 <tbody>
                     <?php if (empty($products)): ?>
                     <tr>
-                        <td colspan="9" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             <i class="fas fa-box-open"></i>
                             <p>Nenhum produto encontrado</p>
                         </td>
@@ -724,6 +748,13 @@ include '../../includes/header.php';
                             <img src="../../uploads/products/<?= htmlspecialchars($product['image']) ?>" style="width:40px;height:40px;border-radius:6px;object-fit:cover;">
                             <?php else: ?>
                             <div style="width:40px;height:40px;border-radius:6px;background:#f0f0f0;display:inline-flex;align-items:center;justify-content:center;color:#ccc;"><i class="fas fa-image"></i></div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (($product['type'] ?? 'product') === 'service'): ?>
+                            <span class="badge" style="background:#4CAF50;color:white;"><i class="fas fa-tools"></i> Serviço</span>
+                            <?php else: ?>
+                            <span class="badge" style="background:#667eea;color:white;"><i class="fas fa-box"></i> Produto</span>
                             <?php endif; ?>
                         </td>
                         <td><span class="badge"><?= htmlspecialchars($product['barcode'] ?: $product['code']) ?></span></td>
@@ -779,6 +810,7 @@ include '../../includes/header.php';
             </div>
             <form method="POST" class="modal-form" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="add">
+                <input type="hidden" name="type" id="create_type" value="product">
 
                 <!-- Foto do Produto -->
                 <div class="form-group" style="text-align:center; margin-bottom:15px;">
@@ -1188,6 +1220,55 @@ include '../../includes/header.php';
             document.getElementById('edit_remove_image_btn').style.display = 'none';
         }
 
+        function openCreateService() {
+            document.getElementById('create_type').value = 'service';
+            document.querySelector('#createModal .modal-header h2').innerHTML = '<i class="fas fa-tools"></i> Novo Serviço';
+            // Esconder campos de estoque para serviço
+            var stockRows = document.querySelectorAll('#createModal .form-row');
+            stockRows.forEach(function(row) {
+                var labels = row.querySelectorAll('label');
+                labels.forEach(function(label) {
+                    if (label.textContent.includes('Estoque')) {
+                        row.style.display = 'none';
+                        row.classList.add('stock-row');
+                    }
+                });
+            });
+            // Esconder código de barras (não faz sentido para serviço) - tornar não obrigatório
+            var barcodeInput = document.querySelector('#createModal input[name="barcode"]');
+            if (barcodeInput) {
+                barcodeInput.removeAttribute('required');
+                barcodeInput.closest('.form-group').querySelector('label').innerHTML = 'Código (opcional)';
+            }
+            // Preço não obrigatório para serviço (pode definir na hora de lançar na OS)
+            var costInput = document.querySelector('#createModal input[name="cost_price"]');
+            var saleInput = document.querySelector('#createModal input[name="sale_price"]');
+            if (costInput) { costInput.removeAttribute('required'); costInput.closest('.form-group').querySelector('label').innerHTML = 'Preço de Custo'; }
+            if (saleInput) { saleInput.removeAttribute('required'); saleInput.closest('.form-group').querySelector('label').innerHTML = 'Preço de Venda'; }
+            openModal('createModal');
+        }
+
+        function resetCreateModal() {
+            document.getElementById('create_type').value = 'product';
+            document.querySelector('#createModal .modal-header h2').innerHTML = '<i class="fas fa-plus"></i> Novo Produto';
+            // Restaurar campos de estoque
+            document.querySelectorAll('#createModal .stock-row').forEach(function(row) {
+                row.style.display = '';
+                row.classList.remove('stock-row');
+            });
+            // Restaurar código de barras
+            var barcodeInput = document.querySelector('#createModal input[name="barcode"]');
+            if (barcodeInput) {
+                barcodeInput.setAttribute('required', 'required');
+                barcodeInput.closest('.form-group').querySelector('label').innerHTML = 'Código de Barras *';
+            }
+            // Restaurar preço obrigatório
+            var costInput = document.querySelector('#createModal input[name="cost_price"]');
+            var saleInput = document.querySelector('#createModal input[name="sale_price"]');
+            if (costInput) { costInput.setAttribute('required', 'required'); costInput.closest('.form-group').querySelector('label').innerHTML = 'Preço de Custo *'; }
+            if (saleInput) { saleInput.setAttribute('required', 'required'); saleInput.closest('.form-group').querySelector('label').innerHTML = 'Preço de Venda *'; }
+        }
+
         function openEditModal(product) {
             document.getElementById('edit_id').value = product.id;
             document.getElementById('edit_name').value = product.name;
@@ -1215,6 +1296,28 @@ include '../../includes/header.php';
             } else {
                 preview.innerHTML = '<span style="color:#aaa;font-size:13px;"><i class="fas fa-camera" style="font-size:24px;display:block;margin-bottom:5px;"></i>Adicionar foto</span>';
                 removeBtn.style.display = 'none';
+            }
+            // Tipo (produto/serviço)
+            var isService = (product.type || 'product') === 'service';
+            if (isService) {
+                document.querySelector('#editModal .modal-header h2').innerHTML = '<i class="fas fa-tools"></i> Editar Serviço';
+                // Esconder estoque
+                var stockRows = document.querySelectorAll('#editModal .form-row');
+                stockRows.forEach(function(row) {
+                    var labels = row.querySelectorAll('label');
+                    labels.forEach(function(label) {
+                        if (label.textContent.includes('Estoque')) {
+                            row.style.display = 'none';
+                            row.classList.add('stock-row-edit');
+                        }
+                    });
+                });
+            } else {
+                document.querySelector('#editModal .modal-header h2').innerHTML = '<i class="fas fa-edit"></i> Editar Produto';
+                document.querySelectorAll('#editModal .stock-row-edit').forEach(function(row) {
+                    row.style.display = '';
+                    row.classList.remove('stock-row-edit');
+                });
             }
             openModal('editModal');
             calcMargin(document.querySelector('#editModal form'));

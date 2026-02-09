@@ -21,30 +21,32 @@ if ($osId <= 0) {
 try {
     $stmt = $conn->prepare("
         SELECT
+            soi.type,
             soi.product_id,
+            soi.description,
             soi.quantity,
-            soi.price,
-            soi.subtotal,
+            soi.unit_price,
+            soi.total_price,
             p.name as product_name
         FROM service_order_items soi
-        INNER JOIN products p ON soi.product_id = p.id
+        LEFT JOIN products p ON soi.product_id = p.id
         WHERE soi.service_order_id = ?
         ORDER BY soi.id ASC
     ");
 
     $stmt->execute([$osId]);
-    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     header('Content-Type: application/json');
     echo json_encode([
         'success' => true,
-        'products' => $products
+        'products' => $items
     ]);
 
 } catch (PDOException $e) {
     header('Content-Type: application/json');
     echo json_encode([
         'success' => false,
-        'message' => 'Erro ao buscar produtos: ' . $e->getMessage()
+        'message' => 'Erro ao buscar itens: ' . $e->getMessage()
     ]);
 }

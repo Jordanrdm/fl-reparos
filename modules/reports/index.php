@@ -145,10 +145,11 @@ elseif ($report_type === 'cashflow') {
     // Totalizadores (calcular sobre TODOS os registros, não só da página)
     $stmtTotals = $conn->prepare("
         SELECT
-            SUM(CASE WHEN type IN ('sale', 'entry') THEN amount ELSE 0 END) as total_entries,
+            SUM(CASE WHEN type IN ('sale', 'service', 'entry') THEN amount ELSE 0 END) as total_entries,
             SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_exits
         FROM cash_flow
         WHERE DATE(created_at) BETWEEN ? AND ?
+        AND type NOT IN ('opening', 'closing')
     ");
     $stmtTotals->execute([$date_from, $date_to]);
     $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
@@ -353,11 +354,25 @@ function traduzirStatus($status) {
         'overdue' => 'Atrasado',
         'open' => 'Aberta',
         'in_progress' => 'Em Andamento',
+        'completed' => 'Concluída',
+        'delivered' => 'Entregue',
+        'invoiced' => 'Faturada',
+        'cancelled' => 'Cancelada',
         'closed' => 'Fechada',
         'pago' => 'Pago',
         'pendente' => 'Pendente'
     ];
     return $map[$status] ?? ucfirst($status);
+}
+
+function traduzirMetodoPagamento($method) {
+    $map = [
+        'dinheiro' => 'Dinheiro',
+        'pix' => 'PIX',
+        'cartao_credito' => 'Cartão Crédito',
+        'cartao_debito' => 'Cartão Débito'
+    ];
+    return $map[$method] ?? ucfirst($method);
 }
 
 function traduzirTipo($type) {
@@ -366,8 +381,11 @@ function traduzirTipo($type) {
         'variavel' => 'Variável',
         'fornecedor' => 'Fornecedor',
         'sale' => 'Venda',
+        'service' => 'Ordem de Serviço',
         'entry' => 'Entrada',
-        'expense' => 'Despesa'
+        'expense' => 'Despesa',
+        'opening' => 'Abertura',
+        'closing' => 'Fechamento'
     ];
     return $map[$type] ?? ucfirst($type);
 }
@@ -495,7 +513,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
 .badge.overdue {background:#f44336;}
 .badge.open {background:#2196F3;}
 .badge.in_progress {background:#FF9800;}
+.badge.completed {background:#4CAF50;}
+.badge.delivered {background:#8BC34A;}
+.badge.invoiced {background:#00BCD4;}
+.badge.cancelled {background:#f44336;}
 .badge.closed {background:#4CAF50;}
+.badge.sale {background:#4CAF50;}
+.badge.service {background:#FF9800;}
+.badge.entry {background:#2196F3;}
+.badge.expense {background:#f44336;}
+.badge.opening {background:#9C27B0;}
+.badge.closing {background:#607D8B;}
 .empty {text-align:center;padding:40px;color:#777;font-style:italic;}
 
 .print-btn {
@@ -860,7 +888,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <td><?= htmlspecialchars($row['description']) ?></td>
                         <td><?= htmlspecialchars($row['user_name']) ?></td>
                         <td>
-                            <?php if (in_array($row['type'], ['sale', 'entry'])): ?>
+                            <?php if (in_array($row['type'], ['opening', 'closing'])): ?>
+                                <span style="color:#888;">R$ <?= number_format($row['amount'], 2, ',', '.') ?></span>
+                            <?php elseif (in_array($row['type'], ['sale', 'service', 'entry'])): ?>
                                 <strong style="color:#4CAF50;">+ R$ <?= number_format($row['amount'], 2, ',', '.') ?></strong>
                             <?php else: ?>
                                 <strong style="color:#f44336;">- R$ <?= number_format($row['amount'], 2, ',', '.') ?></strong>
@@ -1029,19 +1059,49 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <th>Cliente</th>
                         <th>Equipamento</th>
                         <th>Status</th>
+                        <th>Pagamento</th>
+                        <th>Entrada</th>
                         <th>Valor</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if(empty($data)): ?>
-                        <tr><td colspan="6" class="empty">Nenhuma OS encontrada no período.</td></tr>
-                    <?php else: foreach($data as $row): ?>
+                        <tr><td colspan="8" class="empty">Nenhuma OS encontrada no período.</td></tr>
+                    <?php else: foreach($data as $row):
+                        // Formas de pagamento
+                        $paymentDisplay = '';
+                        if (!empty($row['payment_methods'])) {
+                            $payments = json_decode($row['payment_methods'], true);
+                            if (is_array($payments) && count($payments) > 0) {
+                                $parts = [];
+                                foreach ($payments as $pm) {
+                                    $label = traduzirMetodoPagamento($pm['method']);
+                                    $val = 'R$ ' . number_format($pm['amount'], 2, ',', '.');
+                                    if ($pm['method'] === 'cartao_credito' && ($pm['installments'] ?? 1) > 1) {
+                                        $label .= ' ' . $pm['installments'] . 'x';
+                                    }
+                                    $parts[] = $label . ' (' . $val . ')';
+                                }
+                                $paymentDisplay = implode('<br>', $parts);
+                            }
+                        }
+                        if (empty($paymentDisplay) && !empty($row['payment_method'])) {
+                            $paymentDisplay = traduzirMetodoPagamento($row['payment_method']);
+                        }
+                        if (empty($paymentDisplay)) {
+                            $paymentDisplay = '<span style="color:#999;">-</span>';
+                        }
+
+                        $deposit = floatval($row['deposit_amount'] ?? 0);
+                    ?>
                     <tr>
                         <td><?= $row['id'] ?></td>
                         <td><?= formatDateTime($row['entry_datetime']) ?></td>
                         <td><?= htmlspecialchars($row['customer_name']) ?></td>
                         <td><?= htmlspecialchars($row['device']) ?></td>
                         <td><span class="badge <?= $row['status'] ?>"><?= traduzirStatus($row['status']) ?></span></td>
+                        <td style="font-size:0.8rem;"><?= $paymentDisplay ?></td>
+                        <td><?= $deposit > 0 ? 'R$ ' . number_format($deposit, 2, ',', '.') : '-' ?></td>
                         <td><strong>R$ <?= number_format($row['total_cost'], 2, ',', '.') ?></strong></td>
                     </tr>
                     <?php endforeach; endif; ?>
