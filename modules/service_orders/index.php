@@ -813,7 +813,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </h3>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Cliente *</label>
+                    <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
                         <input type="text" id="createCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
                         <input type="hidden" name="customer_id" id="createCustomerId" required>
@@ -1120,7 +1120,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </h3>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Cliente *</label>
+                    <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
                         <input type="text" id="editCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
                         <input type="hidden" name="customer_id" id="edit_customer_id" required>

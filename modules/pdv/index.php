@@ -112,6 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 
                 $items = json_decode($_POST['items'], true);
                 $customer_name = sanitize($_POST['customer_name'] ?? '');
+                $customer_id = !empty($_POST['customer_id']) ? (int)$_POST['customer_id'] : null;
                 $discount = (float)$_POST['discount'];
                 $payments = json_decode($_POST['payments'], true);
                 $total_amount = (float)$_POST['total_amount'];
@@ -130,11 +131,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 }
 
                 // Inserir venda
+                $notes = (!$customer_id && $customer_name) ? "Cliente: $customer_name" : null;
                 $stmt = $pdo->prepare("
-                    INSERT INTO sales (customer_id, user_id, total_amount, discount, final_amount, payment_method, status, created_at)
-                    VALUES (NULL, ?, ?, ?, ?, ?, 'completed', NOW())
+                    INSERT INTO sales (customer_id, user_id, total_amount, discount, final_amount, payment_method, status, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, NOW())
                 ");
-                $stmt->execute([$_SESSION['user_id'], $total_amount, $discount, $final_amount, $payment_description]);
+                $stmt->execute([$customer_id, $_SESSION['user_id'], $total_amount, $discount, $final_amount, $payment_description, $notes]);
                 $sale_id = $pdo->lastInsertId();
 
                 // Inserir itens da venda e atualizar estoque
@@ -210,6 +212,169 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 
             } catch (Exception $e) {
                 $pdo->rollback();
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+            exit;
+
+        case 'get_sales_history':
+            try {
+                $stmt = $pdo->prepare("
+                    SELECT s.id, s.created_at, s.total_amount, s.discount, s.final_amount, s.payment_method,
+                           u.name as seller_name,
+                           COALESCE(
+                               (SELECT c.name FROM customers c WHERE c.id = s.customer_id),
+                               CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE NULL END,
+                               'Consumidor Final'
+                           ) as customer_name
+                    FROM sales s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.status = 'completed'
+                    ORDER BY s.created_at DESC
+                    LIMIT 100
+                ");
+                $stmt->execute();
+                echo json_encode(['success' => true, 'sales' => $stmt->fetchAll()]);
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+            exit;
+
+        case 'get_sale_details':
+            try {
+                $sale_id = (int)$_POST['sale_id'];
+
+                // Dados da venda
+                $stmt = $pdo->prepare("
+                    SELECT s.*, u.name as seller_name,
+                           COALESCE(
+                               (SELECT c.name FROM customers c WHERE c.id = s.customer_id),
+                               CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE NULL END,
+                               'Consumidor Final'
+                           ) as customer_name
+                    FROM sales s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.id = ?
+                ");
+                $stmt->execute([$sale_id]);
+                $sale = $stmt->fetch();
+
+                // Itens da venda
+                $stmt = $pdo->prepare("
+                    SELECT si.*, p.name as product_name
+                    FROM sale_items si
+                    LEFT JOIN products p ON si.product_id = p.id
+                    WHERE si.sale_id = ?
+                ");
+                $stmt->execute([$sale_id]);
+                $items = $stmt->fetchAll();
+
+                echo json_encode(['success' => true, 'sale' => $sale, 'items' => $items]);
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+            exit;
+
+        case 'delete_sale':
+            try {
+                if ($_SESSION['user_role'] !== 'admin') {
+                    echo json_encode(['success' => false, 'error' => 'Apenas administradores podem excluir vendas']);
+                    exit;
+                }
+
+                $sale_id = (int)$_POST['sale_id'];
+                $pdo->beginTransaction();
+
+                // Buscar dados da venda para o log
+                $stmt = $pdo->prepare("
+                    SELECT s.*, u.name as seller_name,
+                           COALESCE((SELECT c.name FROM customers c WHERE c.id = s.customer_id),
+                                    CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE 'Consumidor Final' END
+                           ) as customer_name
+                    FROM sales s LEFT JOIN users u ON s.user_id = u.id WHERE s.id = ?
+                ");
+                $stmt->execute([$sale_id]);
+                $saleData = $stmt->fetch();
+
+                // Buscar itens para log
+                $stmt = $pdo->prepare("SELECT si.*, p.name as product_name FROM sale_items si LEFT JOIN products p ON si.product_id = p.id WHERE si.sale_id = ?");
+                $stmt->execute([$sale_id]);
+                $itemsLog = $stmt->fetchAll();
+
+                // Salvar no log de vendas excluídas
+                $pdo->prepare("INSERT INTO deleted_sales (sale_id, customer_name, seller_name, total_amount, discount, final_amount, payment_method, items_json, deleted_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$sale_id, $saleData['customer_name'], $saleData['seller_name'], $saleData['total_amount'], $saleData['discount'], $saleData['final_amount'], $saleData['payment_method'], json_encode($itemsLog), $_SESSION['user_id']]);
+
+                // Restaurar estoque dos itens
+                $stmt = $pdo->prepare("SELECT product_id, quantity FROM sale_items WHERE sale_id = ?");
+                $stmt->execute([$sale_id]);
+                $items = $stmt->fetchAll();
+                foreach ($items as $item) {
+                    $pdo->prepare("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?")->execute([$item['quantity'], $item['product_id']]);
+                }
+
+                // Deletar itens, fluxo de caixa e venda
+                $pdo->prepare("DELETE FROM sale_items WHERE sale_id = ?")->execute([$sale_id]);
+                $pdo->prepare("DELETE FROM cash_flow WHERE reference_id = ? AND reference_type IN ('sale', 'sale_change')")->execute([$sale_id]);
+                $pdo->prepare("DELETE FROM sales WHERE id = ?")->execute([$sale_id]);
+
+                $pdo->commit();
+                echo json_encode(['success' => true]);
+            } catch (Exception $e) {
+                $pdo->rollback();
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+            exit;
+
+        case 'get_deleted_sales':
+            try {
+                if ($_SESSION['user_role'] !== 'admin') {
+                    echo json_encode(['success' => false, 'error' => 'Acesso restrito']);
+                    exit;
+                }
+                $stmt = $pdo->prepare("
+                    SELECT ds.*, u.name as deleted_by_name
+                    FROM deleted_sales ds
+                    LEFT JOIN users u ON ds.deleted_by = u.id
+                    ORDER BY ds.deleted_at DESC LIMIT 50
+                ");
+                $stmt->execute();
+                echo json_encode(['success' => true, 'sales' => $stmt->fetchAll()]);
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+            exit;
+
+        case 'edit_sale':
+            try {
+                if ($_SESSION['user_role'] !== 'admin') {
+                    echo json_encode(['success' => false, 'error' => 'Apenas administradores podem editar vendas']);
+                    exit;
+                }
+
+                $sale_id = (int)$_POST['sale_id'];
+                $discount = (float)$_POST['discount'];
+                $payment_method = $_POST['payment_method'] ?? '';
+                $customer_id = !empty($_POST['customer_id']) ? (int)$_POST['customer_id'] : null;
+                $customer_name = $_POST['customer_name'] ?? '';
+
+                // Buscar venda original
+                $stmt = $pdo->prepare("SELECT total_amount FROM sales WHERE id = ?");
+                $stmt->execute([$sale_id]);
+                $sale = $stmt->fetch();
+                $total_amount = (float)$sale['total_amount'];
+                $final_amount = $total_amount - $discount;
+
+                $notes = (!$customer_id && $customer_name) ? "Cliente: $customer_name" : null;
+
+                $pdo->prepare("UPDATE sales SET customer_id=?, discount=?, final_amount=?, payment_method=?, notes=? WHERE id=?")
+                    ->execute([$customer_id, $discount, $final_amount, $payment_method, $notes, $sale_id]);
+
+                // Atualizar cash_flow
+                $pdo->prepare("UPDATE cash_flow SET amount=?, description=CONCAT('Venda #', ?, ' - ', ?) WHERE reference_id=? AND reference_type='sale'")
+                    ->execute([$final_amount, $sale_id, $payment_method, $sale_id]);
+
+                echo json_encode(['success' => true]);
+            } catch (Exception $e) {
                 echo json_encode(['success' => false, 'error' => $e->getMessage()]);
             }
             exit;
@@ -1001,7 +1166,7 @@ try {
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 2000;
+            z-index: 20000;
             backdrop-filter: blur(5px);
         }
 
@@ -1156,9 +1321,14 @@ try {
                     <i class="fas fa-cash-register"></i>
                     PDV Rápido
                 </h1>
-                <a href="../../index.php" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left"></i> Voltar
-                </a>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="openSalesHistory()" class="btn btn-secondary" style="background: linear-gradient(135deg, #00b894, #00cec9); border: none; color: white;">
+                        <i class="fas fa-history"></i> Histórico de Vendas
+                    </button>
+                    <a href="../../index.php" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </a>
+                </div>
             </div>
 
             <!-- Busca de Produtos -->
@@ -1407,6 +1577,111 @@ try {
                 <button class="btn btn-no-print" onclick="closePrintModal()">
                     <i class="fas fa-times"></i> Não Imprimir
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Histórico de Vendas -->
+    <div id="salesHistoryModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; justify-content:center; align-items:center;">
+        <div style="background:white; border-radius:15px; width:90%; max-width:900px; max-height:85vh; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="background:linear-gradient(135deg, #00b894, #00cec9); padding:20px 25px; display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0; color:white; font-size:20px;"><i class="fas fa-history"></i> Histórico de Vendas</h2>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <?php if (($_SESSION['user_role'] ?? '') === 'admin'): ?>
+                    <button onclick="toggleDeletedSales()" id="btnDeletedSales" style="background:rgba(255,255,255,0.2); border:none; color:white; padding:8px 15px; border-radius:8px; cursor:pointer; font-size:12px;"><i class="fas fa-trash-alt"></i> Excluídas</button>
+                    <?php endif; ?>
+                    <button onclick="closeSalesHistory()" style="background:rgba(255,255,255,0.2); border:none; color:white; width:35px; height:35px; border-radius:50%; cursor:pointer; font-size:18px;">&times;</button>
+                </div>
+            </div>
+            <div style="padding:15px 25px;">
+                <input type="text" id="salesHistorySearch" placeholder="Buscar por ID ou cliente..." style="width:100%; padding:10px 15px; border:2px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box;" oninput="filterSalesHistory(this.value)">
+            </div>
+            <div style="overflow-y:auto; max-height:calc(85vh - 150px); padding:0 25px 25px;">
+                <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                    <thead>
+                        <tr style="background:#f8f9fa; position:sticky; top:0;">
+                            <th style="padding:12px 8px; text-align:left; border-bottom:2px solid #dee2e6; color:#555;">ID</th>
+                            <th style="padding:12px 8px; text-align:left; border-bottom:2px solid #dee2e6; color:#555;">Data/Hora</th>
+                            <th style="padding:12px 8px; text-align:left; border-bottom:2px solid #dee2e6; color:#555;">Cliente</th>
+                            <th style="padding:12px 8px; text-align:left; border-bottom:2px solid #dee2e6; color:#555;">Vendedor</th>
+                            <th style="padding:12px 8px; text-align:right; border-bottom:2px solid #dee2e6; color:#555;">Total</th>
+                            <th style="padding:12px 8px; text-align:right; border-bottom:2px solid #dee2e6; color:#555;">Desconto</th>
+                            <th style="padding:12px 8px; text-align:right; border-bottom:2px solid #dee2e6; color:#555;">Final</th>
+                            <th style="padding:12px 8px; text-align:center; border-bottom:2px solid #dee2e6; color:#555;">Pagamento</th>
+                            <th style="padding:12px 8px; text-align:center; border-bottom:2px solid #dee2e6; color:#555;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesHistoryBody">
+                        <tr><td colspan="9" style="text-align:center; padding:30px; color:#999;">Carregando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Detalhes da Venda -->
+    <div id="saleDetailModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10001; justify-content:center; align-items:center;">
+        <div style="background:white; border-radius:15px; width:90%; max-width:500px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="background:linear-gradient(135deg, #00b894, #00cec9); padding:20px 25px; display:flex; justify-content:space-between; align-items:center;">
+                <h2 id="saleDetailTitle" style="margin:0; color:white; font-size:18px;"><i class="fas fa-file-alt"></i> Detalhes da Venda</h2>
+                <button onclick="closeSaleDetail()" style="background:rgba(255,255,255,0.2); border:none; color:white; width:35px; height:35px; border-radius:50%; cursor:pointer; font-size:18px;">&times;</button>
+            </div>
+            <div id="saleDetailContent" style="padding:25px;">
+                <p style="text-align:center; color:#999;">Carregando...</p>
+            </div>
+            <div style="padding:0 25px 25px; display:flex; gap:10px; justify-content:center;">
+                <button onclick="reprintReceipt()" class="btn" style="background:linear-gradient(135deg, #00b894, #00cec9); color:white; border:none; padding:12px 25px; border-radius:8px; cursor:pointer; font-size:14px;">
+                    <i class="fas fa-print"></i> Reimprimir Cupom
+                </button>
+                <button onclick="closeSaleDetail()" class="btn" style="background:#6c757d; color:white; border:none; padding:12px 25px; border-radius:8px; cursor:pointer; font-size:14px;">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Venda -->
+    <div id="editSaleModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10002; justify-content:center; align-items:center;">
+        <div style="background:white; border-radius:15px; width:90%; max-width:450px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="background:linear-gradient(135deg, #0984e3, #74b9ff); padding:20px 25px; display:flex; justify-content:space-between; align-items:center;">
+                <h2 id="editSaleTitle" style="margin:0; color:white; font-size:18px;"><i class="fas fa-edit"></i> Editar Venda</h2>
+                <button onclick="closeEditSale()" style="background:rgba(255,255,255,0.2); border:none; color:white; width:35px; height:35px; border-radius:50%; cursor:pointer; font-size:18px;">&times;</button>
+            </div>
+            <div style="padding:25px;">
+                <input type="hidden" id="editSaleId">
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:bold; font-size:13px; color:#555;">Cliente</label>
+                    <div class="autocomplete">
+                        <input type="text" id="editSaleCustomer" autocomplete="off" placeholder="Buscar cliente por nome, CPF ou telefone..." style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                        <div id="editCustomerSuggestions" class="autocomplete-suggestions" style="display:none;"></div>
+                    </div>
+                    <input type="hidden" id="editSaleCustomerId">
+                    <small id="editCustomerInfo" style="color:#888; font-size:11px; margin-top:3px; display:block;"></small>
+                </div>
+                <div style="display:flex; gap:10px; margin-bottom:15px;">
+                    <div style="flex:1;">
+                        <label style="font-weight:bold; font-size:13px; color:#555;">Desconto (R$)</label>
+                        <input type="number" id="editSaleDiscount" step="0.01" min="0" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-weight:bold; font-size:13px; color:#555;">Pagamento</label>
+                        <select id="editSalePayment" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Cartão de Débito">Cartão de Débito</option>
+                            <option value="Cartão de Crédito">Cartão de Crédito</option>
+                            <option value="PIX">PIX</option>
+                            <option value="Transferência">Transferência</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="saveEditSale()" style="flex:1; background:linear-gradient(135deg, #00b894, #00cec9); color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:bold;">
+                        <i class="fas fa-save"></i> Salvar
+                    </button>
+                    <button onclick="closeEditSale()" style="flex:1; background:#6c757d; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-size:14px;">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -2378,6 +2653,7 @@ try {
                 formData.append('action', 'finalize_sale');
                 formData.append('items', JSON.stringify(cart));
                 formData.append('customer_name', document.getElementById('customerSearch').value);
+                formData.append('customer_id', document.getElementById('customerId').value || '');
                 formData.append('discount', discount);
                 formData.append('payments', JSON.stringify(finalPayments));
                 formData.append('total_amount', subtotal);
@@ -2824,9 +3100,506 @@ try {
         // Foco inicial
         document.getElementById('productSearch').focus();
 
-        console.log('🛒 PDV Rápido com Pagamentos Melhorados carregado!');
-        console.log('⌨️ Atalhos: F3=Buscar, F8=Pagamento, F9=Finalizar, F12=Ver Todos, ESC=Foco/Fechar Modal');
-        console.log('💰 Novo: Link + Enter, sem botões, fluxo natural');
+        // ===== HISTÓRICO DE VENDAS =====
+        let allSalesHistory = [];
+        let currentSaleDetail = null;
+
+        let showingDeleted = false;
+
+        function toggleDeletedSales() {
+            showingDeleted = !showingDeleted;
+            const btn = document.getElementById('btnDeletedSales');
+            if (showingDeleted) {
+                btn.style.background = '#d63031';
+                btn.innerHTML = '<i class="fas fa-history"></i> Voltar';
+                loadDeletedSales();
+            } else {
+                btn.style.background = 'rgba(255,255,255,0.2)';
+                btn.innerHTML = '<i class="fas fa-trash-alt"></i> Excluídas';
+                loadSalesHistory();
+            }
+        }
+
+        function loadDeletedSales() {
+            const body = document.getElementById('salesHistoryBody');
+            body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#999;"><i class="fas fa-spinner fa-spin"></i> Carregando...</td></tr>';
+
+            const formData = new FormData();
+            formData.append('action', 'get_deleted_sales');
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.sales.length > 0) {
+                        body.innerHTML = data.sales.map(sale => {
+                            const date = new Date(sale.deleted_at);
+                            const dateStr = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+                            const total = parseFloat(sale.total_amount || 0).toFixed(2).replace('.', ',');
+                            const discount = parseFloat(sale.discount || 0);
+                            const discountStr = discount > 0 ? 'R$ ' + discount.toFixed(2).replace('.', ',') : '-';
+                            const finalVal = parseFloat(sale.final_amount || 0).toFixed(2).replace('.', ',');
+                            return `
+                                <tr style="border-bottom:1px solid #f0f0f0; background:#fff5f5;">
+                                    <td style="padding:10px 8px; font-weight:bold; color:#d63031;">#${sale.sale_id}</td>
+                                    <td style="padding:10px 8px; font-size:12px;">${dateStr}</td>
+                                    <td style="padding:10px 8px;">${sale.customer_name || 'N/A'}</td>
+                                    <td style="padding:10px 8px;">${sale.seller_name || 'N/A'}</td>
+                                    <td style="padding:10px 8px; text-align:right;">R$ ${total}</td>
+                                    <td style="padding:10px 8px; text-align:right; color:#e74c3c;">${discountStr}</td>
+                                    <td style="padding:10px 8px; text-align:right; font-weight:bold; color:#d63031;">R$ ${finalVal}</td>
+                                    <td style="padding:10px 8px; text-align:center; font-size:12px;">${sale.payment_method || '-'}</td>
+                                    <td style="padding:10px 8px; text-align:center; font-size:11px; color:#999;">
+                                        <i class="fas fa-user"></i> ${sale.deleted_by_name || 'N/A'}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                    } else {
+                        body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#999;">Nenhuma venda excluída</td></tr>';
+                    }
+                });
+        }
+
+        function openSalesHistory() {
+            showingDeleted = false;
+            const btn = document.getElementById('btnDeletedSales');
+            if (btn) {
+                btn.style.background = 'rgba(255,255,255,0.2)';
+                btn.innerHTML = '<i class="fas fa-trash-alt"></i> Excluídas';
+            }
+            const modal = document.getElementById('salesHistoryModal');
+            modal.style.display = 'flex';
+            document.getElementById('salesHistorySearch').value = '';
+            loadSalesHistory();
+        }
+
+        function closeSalesHistory() {
+            document.getElementById('salesHistoryModal').style.display = 'none';
+        }
+
+        function loadSalesHistory() {
+            const body = document.getElementById('salesHistoryBody');
+            body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#999;"><i class="fas fa-spinner fa-spin"></i> Carregando...</td></tr>';
+
+            const formData = new FormData();
+            formData.append('action', 'get_sales_history');
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        allSalesHistory = data.sales;
+                        renderSalesHistory(data.sales);
+                    } else {
+                        body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#e74c3c;">Erro ao carregar vendas</td></tr>';
+                    }
+                })
+                .catch(() => {
+                    body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#e74c3c;">Erro de conexão</td></tr>';
+                });
+        }
+
+        function renderSalesHistory(sales) {
+            const body = document.getElementById('salesHistoryBody');
+            if (sales.length === 0) {
+                body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#999;">Nenhuma venda encontrada</td></tr>';
+                return;
+            }
+
+            body.innerHTML = sales.map(sale => {
+                const date = new Date(sale.created_at);
+                const dateStr = date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+                const total = parseFloat(sale.total_amount).toFixed(2).replace('.', ',');
+                const discount = parseFloat(sale.discount || 0);
+                const discountStr = discount > 0 ? 'R$ ' + discount.toFixed(2).replace('.', ',') : '-';
+                const discountColor = discount > 0 ? 'color:#e74c3c; font-weight:bold;' : 'color:#999;';
+                const finalVal = parseFloat(sale.final_amount).toFixed(2).replace('.', ',');
+                const payment = sale.payment_method || '-';
+                const shortPayment = payment.length > 15 ? payment.substring(0, 15) + '...' : payment;
+
+                return `
+                    <tr style="border-bottom:1px solid #f0f0f0; cursor:pointer;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                        <td style="padding:10px 8px; font-weight:bold; color:#00b894;">#${sale.id}</td>
+                        <td style="padding:10px 8px; font-size:12px;">${dateStr}</td>
+                        <td style="padding:10px 8px;">${sale.customer_name}</td>
+                        <td style="padding:10px 8px;">${sale.seller_name || 'N/A'}</td>
+                        <td style="padding:10px 8px; text-align:right;">R$ ${total}</td>
+                        <td style="padding:10px 8px; text-align:right; ${discountColor}">${discountStr}</td>
+                        <td style="padding:10px 8px; text-align:right; font-weight:bold; color:#00b894;">R$ ${finalVal}</td>
+                        <td style="padding:10px 8px; text-align:center; font-size:12px;" title="${payment}">${shortPayment}</td>
+                        <td style="padding:10px 8px; text-align:center;">
+                            ${userRole === 'admin' ? `
+                            <button onclick="event.stopPropagation(); openEditSale(${sale.id})" style="background:#0984e3; border:none; color:white; width:32px; height:32px; border-radius:6px; cursor:pointer; margin-right:4px;" title="Editar">
+                                <i class="fas fa-edit"></i>
+                            </button>` : ''}
+                            <button onclick="event.stopPropagation(); openSaleDetail(${sale.id})" style="background:#ff7675; border:none; color:white; width:32px; height:32px; border-radius:6px; cursor:pointer; margin-right:4px;" title="Detalhes">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); reprintFromHistory(${sale.id})" style="background:#fdcb6e; border:none; color:white; width:32px; height:32px; border-radius:6px; cursor:pointer;" title="Imprimir">
+                                <i class="fas fa-print"></i>
+                            </button>
+                            ${userRole === 'admin' ? `
+                            <button onclick="event.stopPropagation(); deleteSaleFromHistory(${sale.id})" style="background:#d63031; border:none; color:white; width:32px; height:32px; border-radius:6px; cursor:pointer; margin-left:4px;" title="Excluir">
+                                <i class="fas fa-trash"></i>
+                            </button>` : ''}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function filterSalesHistory(query) {
+            query = query.toLowerCase().trim();
+            if (!query) {
+                renderSalesHistory(allSalesHistory);
+                return;
+            }
+            const filtered = allSalesHistory.filter(s =>
+                String(s.id).includes(query) ||
+                (s.customer_name && s.customer_name.toLowerCase().includes(query))
+            );
+            renderSalesHistory(filtered);
+        }
+
+        function openSaleDetail(saleId) {
+            const modal = document.getElementById('saleDetailModal');
+            modal.style.display = 'flex';
+            document.getElementById('saleDetailTitle').innerHTML = '<i class="fas fa-file-alt"></i> Detalhes da Venda #' + saleId;
+            document.getElementById('saleDetailContent').innerHTML = '<p style="text-align:center; color:#999;"><i class="fas fa-spinner fa-spin"></i> Carregando...</p>';
+
+            const formData = new FormData();
+            formData.append('action', 'get_sale_details');
+            formData.append('sale_id', saleId);
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        currentSaleDetail = data;
+                        renderSaleDetail(data);
+                    }
+                });
+        }
+
+        function renderSaleDetail(data) {
+            const sale = data.sale;
+            const items = data.items;
+            const date = new Date(sale.created_at);
+            const dateStr = date.toLocaleDateString('pt-BR') + ' às ' + date.toLocaleTimeString('pt-BR');
+            const subtotal = parseFloat(sale.total_amount);
+            const discount = parseFloat(sale.discount || 0);
+            const total = parseFloat(sale.final_amount);
+
+            let html = `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:15px; font-size:14px;">
+                    <div><i class="fas fa-calendar" style="color:#00b894; margin-right:5px;"></i> <strong>Data:</strong> ${dateStr}</div>
+                    <div><i class="fas fa-user" style="color:#0984e3; margin-right:5px;"></i> <strong>Cliente:</strong> ${sale.customer_name}</div>
+                    <div><i class="fas fa-user-tie" style="color:#6c5ce7; margin-right:5px;"></i> <strong>Vendedor:</strong> ${sale.seller_name || 'N/A'}</div>
+                    <div><i class="fas fa-credit-card" style="color:#fdcb6e; margin-right:5px;"></i> <strong>Pagamento:</strong> ${sale.payment_method || '-'}</div>
+                </div>
+
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <div style="flex:1; text-align:center; padding:10px; background:#f8f9fa; border-radius:8px;">
+                        <div style="font-size:12px; color:#666;">Subtotal</div>
+                        <div style="font-size:16px; font-weight:bold;">R$ ${subtotal.toFixed(2).replace('.', ',')}</div>
+                    </div>
+                    <div style="flex:1; text-align:center; padding:10px; background:#fff3f3; border-radius:8px;">
+                        <div style="font-size:12px; color:#e74c3c;">Desconto</div>
+                        <div style="font-size:16px; font-weight:bold; color:#e74c3c;">R$ ${discount.toFixed(2).replace('.', ',')}</div>
+                    </div>
+                    <div style="flex:1; text-align:center; padding:10px; background:#e8f8f5; border-radius:8px;">
+                        <div style="font-size:12px; color:#00b894;">Total</div>
+                        <div style="font-size:18px; font-weight:bold; color:#00b894;">R$ ${total.toFixed(2).replace('.', ',')}</div>
+                    </div>
+                </div>
+
+                <div style="font-size:14px; font-weight:bold; margin-bottom:10px;"><i class="fas fa-box"></i> Itens da Venda</div>
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="background:#f8f9fa;">
+                            <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">Produto</th>
+                            <th style="padding:8px; text-align:center; border-bottom:1px solid #dee2e6;">Qtd</th>
+                            <th style="padding:8px; text-align:right; border-bottom:1px solid #dee2e6;">Unit.</th>
+                            <th style="padding:8px; text-align:right; border-bottom:1px solid #dee2e6;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(item => `
+                            <tr style="border-bottom:1px solid #f0f0f0;">
+                                <td style="padding:8px;">${item.product_name || 'Produto removido'}</td>
+                                <td style="padding:8px; text-align:center;">${item.quantity}</td>
+                                <td style="padding:8px; text-align:right;">R$ ${parseFloat(item.unit_price).toFixed(2).replace('.', ',')}</td>
+                                <td style="padding:8px; text-align:right; font-weight:bold;">R$ ${parseFloat(item.total_price).toFixed(2).replace('.', ',')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            document.getElementById('saleDetailContent').innerHTML = html;
+        }
+
+        function closeSaleDetail() {
+            document.getElementById('saleDetailModal').style.display = 'none';
+        }
+
+        function reprintReceipt() {
+            if (!currentSaleDetail) return;
+            printSaleReceipt(currentSaleDetail);
+        }
+
+        function reprintFromHistory(saleId) {
+            const formData = new FormData();
+            formData.append('action', 'get_sale_details');
+            formData.append('sale_id', saleId);
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        printSaleReceipt(data);
+                    }
+                });
+        }
+
+        function openEditSale(saleId) {
+            const formData = new FormData();
+            formData.append('action', 'get_sale_details');
+            formData.append('sale_id', saleId);
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const sale = data.sale;
+                        document.getElementById('editSaleId').value = sale.id;
+                        document.getElementById('editSaleCustomer').value = sale.customer_name || '';
+                        document.getElementById('editSaleCustomerId').value = sale.customer_id || '';
+                        document.getElementById('editSaleDiscount').value = parseFloat(sale.discount || 0).toFixed(2);
+                        document.getElementById('editSalePayment').value = sale.payment_method || 'Dinheiro';
+                        document.getElementById('editSaleTitle').innerHTML = '<i class="fas fa-edit"></i> Editar Venda #' + sale.id;
+                        // Mostrar info do cliente se existir
+                        const infoEl = document.getElementById('editCustomerInfo');
+                        if (sale.customer_id) {
+                            const c = customers.find(x => x.id == sale.customer_id);
+                            if (c) {
+                                let details = [];
+                                if (c.cpf_cnpj) details.push(c.cpf_cnpj);
+                                if (c.phone) details.push(c.phone);
+                                infoEl.textContent = details.length ? details.join(' | ') : '';
+                            } else {
+                                infoEl.textContent = '';
+                            }
+                        } else {
+                            infoEl.textContent = '';
+                        }
+                        document.getElementById('editSaleModal').style.display = 'flex';
+                        setupEditCustomerAutocomplete();
+                    }
+                });
+        }
+
+        function setupEditCustomerAutocomplete() {
+            const input = document.getElementById('editSaleCustomer');
+            const suggestions = document.getElementById('editCustomerSuggestions');
+
+            // Remover listeners antigos clonando o input
+            const newInput = input.cloneNode(true);
+            input.parentNode.replaceChild(newInput, input);
+
+            function renderList(query) {
+                let filtered;
+                if (!query || query.length === 0) {
+                    filtered = customers;
+                } else {
+                    const q = query.toLowerCase();
+                    filtered = customers.filter(c =>
+                        c.name.toLowerCase().includes(q) ||
+                        (c.cpf_cnpj && c.cpf_cnpj.includes(q)) ||
+                        (c.phone && c.phone.includes(q))
+                    );
+                }
+
+                if (filtered.length > 0) {
+                    const escapeName = (name) => name.replace(/'/g, "\\'");
+                    suggestions.innerHTML = filtered.map(c => `
+                        <div class="autocomplete-suggestion" onclick="selectEditCustomer(${c.id}, '${escapeName(c.name)}')">
+                            <strong>${c.name}</strong>
+                            <div class="customer-details">
+                                ${c.cpf_cnpj ? `<span><i class="fas fa-id-card"></i> ${c.cpf_cnpj}</span>` : ''}
+                                ${c.phone ? `<span><i class="fas fa-phone"></i> ${c.phone}</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    suggestions.style.display = 'block';
+                } else {
+                    suggestions.innerHTML = '<div style="padding:12px;color:#999;text-align:center;">Nenhum cliente encontrado</div>';
+                    suggestions.style.display = 'block';
+                }
+            }
+
+            newInput.addEventListener('focus', function() {
+                renderList(this.value.trim());
+            });
+
+            newInput.addEventListener('input', function() {
+                document.getElementById('editSaleCustomerId').value = '';
+                document.getElementById('editCustomerInfo').textContent = '';
+                renderList(this.value.trim());
+            });
+
+            document.addEventListener('click', function handler(e) {
+                if (!newInput.contains(e.target) && !suggestions.contains(e.target)) {
+                    suggestions.style.display = 'none';
+                }
+            });
+        }
+
+        function selectEditCustomer(id, name) {
+            document.getElementById('editSaleCustomer').value = name;
+            document.getElementById('editSaleCustomerId').value = id;
+            document.getElementById('editCustomerSuggestions').style.display = 'none';
+            const c = customers.find(x => x.id == id);
+            const infoEl = document.getElementById('editCustomerInfo');
+            if (c) {
+                let details = [];
+                if (c.cpf_cnpj) details.push(c.cpf_cnpj);
+                if (c.phone) details.push(c.phone);
+                infoEl.textContent = details.length ? details.join(' | ') : '';
+            } else {
+                infoEl.textContent = '';
+            }
+        }
+
+        function closeEditSale() {
+            document.getElementById('editSaleModal').style.display = 'none';
+            document.getElementById('editCustomerSuggestions').style.display = 'none';
+        }
+
+        function saveEditSale() {
+            const formData = new FormData();
+            formData.append('action', 'edit_sale');
+            formData.append('sale_id', document.getElementById('editSaleId').value);
+            formData.append('customer_name', document.getElementById('editSaleCustomer').value);
+            formData.append('customer_id', document.getElementById('editSaleCustomerId').value);
+            formData.append('discount', document.getElementById('editSaleDiscount').value);
+            formData.append('payment_method', document.getElementById('editSalePayment').value);
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Venda atualizada com sucesso!', 'success');
+                        closeEditSale();
+                        loadSalesHistory();
+                    } else {
+                        showAlert(data.error || 'Erro ao atualizar', 'error');
+                    }
+                });
+        }
+
+        async function deleteSaleFromHistory(saleId) {
+            const confirmed = await showConfirmDialog(
+                'Excluir Venda',
+                `Tem certeza que deseja excluir a venda #${saleId}? O estoque será restaurado. Esta ação não pode ser desfeita.`,
+                'Excluir',
+                'Cancelar'
+            );
+            if (!confirmed) return;
+
+            const formData = new FormData();
+            formData.append('action', 'delete_sale');
+            formData.append('sale_id', saleId);
+
+            fetch('', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Venda #' + saleId + ' excluída com sucesso! Estoque restaurado.', 'success');
+                        loadSalesHistory();
+                    } else {
+                        showAlert(data.error || 'Erro ao excluir venda', 'error');
+                    }
+                });
+        }
+
+        function printSaleReceipt(data) {
+            const sale = data.sale;
+            const items = data.items;
+            const date = new Date(sale.created_at);
+            const subtotal = parseFloat(sale.total_amount);
+            const discount = parseFloat(sale.discount || 0);
+            const total = parseFloat(sale.final_amount);
+
+            const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Cupom de Venda #${sale.id}</title>
+                    <style>
+                        body { font-family: 'Courier New', monospace; font-size: 12px; max-width: 300px; margin: 0 auto; padding: 10px; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .header h1 { margin: 0; font-size: 18px; }
+                        .line { border-top: 1px dashed #000; margin: 10px 0; }
+                        .row { display: flex; justify-content: space-between; margin: 5px 0; }
+                        .total { font-weight: bold; font-size: 14px; }
+                        .center { text-align: center; }
+                        .item { margin: 8px 0; }
+                        .item-name { font-weight: bold; }
+                        .item-details { font-size: 11px; color: #666; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>FL REPAROS</h1>
+                        <p>Sistema de Gestão</p>
+                        <p>CUPOM NÃO FISCAL</p>
+                    </div>
+                    <div class="line"></div>
+                    <div class="row"><span>Venda #:</span><span>${sale.id}</span></div>
+                    <div class="row"><span>Data:</span><span>${date.toLocaleString('pt-BR')}</span></div>
+                    <div class="row"><span>Cliente:</span><span>${sale.customer_name}</span></div>
+                    <div class="row"><span>Vendedor:</span><span>${sale.seller_name || 'N/A'}</span></div>
+                    <div class="line"></div>
+                    <div style="font-weight: bold; margin-bottom: 10px;">ITENS:</div>
+                    ${items.map(item => `
+                        <div class="item">
+                            <div class="item-name">${item.product_name || 'Produto'}</div>
+                            <div class="item-details">
+                                ${item.quantity}x R$ ${parseFloat(item.unit_price).toFixed(2).replace('.', ',')} = R$ ${parseFloat(item.total_price).toFixed(2).replace('.', ',')}
+                            </div>
+                        </div>
+                    `).join('')}
+                    <div class="line"></div>
+                    <div class="row"><span>Subtotal:</span><span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span></div>
+                    ${discount > 0 ? `<div class="row"><span>Desconto:</span><span>R$ ${discount.toFixed(2).replace('.', ',')}</span></div>` : ''}
+                    <div class="row total"><span>TOTAL:</span><span>R$ ${total.toFixed(2).replace('.', ',')}</span></div>
+                    <div class="line"></div>
+                    <div class="row"><span>Pagamento:</span><span>${sale.payment_method || '-'}</span></div>
+                    <div class="line"></div>
+                    <div class="center" style="margin-top: 20px;">
+                        <p>Obrigado pela preferência!</p>
+                        <p>Volte sempre!</p>
+                        <br><small>Sistema FL REPAROS v1.0</small>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            const printWindow = window.open('', '_blank', 'width=400,height=600');
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.onload = function() {
+                setTimeout(() => {
+                    printWindow.print();
+                    printWindow.close();
+                }, 500);
+            };
+            showAlert('Cupom enviado para impressão!', 'success');
+        }
+
+        console.log('PDV Rápido com Pagamentos Melhorados carregado!');
+        console.log('Atalhos: F3=Buscar, F8=Pagamento, F9=Finalizar, F12=Ver Todos, ESC=Foco/Fechar Modal');
     </script>
 </body>
 </html>

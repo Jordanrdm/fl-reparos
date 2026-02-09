@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 // Buscar usuário no banco
                 $stmt = $pdo->prepare("
-                    SELECT id, name, email, password, role, status
+                    SELECT id, name, email, password, role, permissions, status
                     FROM users
                     WHERE email = ? AND status = 'active'
                 ");
@@ -71,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['user_name'] = $user['name'];
                     $_SESSION['user_email'] = $user['email'];
                     $_SESSION['user_role'] = $user['role'];
+                    $_SESSION['user_permissions'] = !empty($user['permissions']) ? json_decode($user['permissions'], true) : null;
                     $_SESSION['login_time'] = time();
                     
                     // Registrar login no sistema

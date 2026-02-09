@@ -115,6 +115,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_movement'
     }
 }
 
+// Reabrir Caixa (admin only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'reopen') {
+    try {
+        if (($_SESSION['user_role'] ?? '') !== 'admin') {
+            echo "<script>alert('Apenas administradores podem reabrir caixa!');window.location='index.php';</script>";
+            exit;
+        }
+
+        // Verificar se já existe caixa aberto
+        $stmt = $conn->prepare("SELECT id FROM cash_register WHERE user_id = ? AND status = 'open'");
+        $stmt->execute([$_SESSION['user_id']]);
+        if ($stmt->fetch()) {
+            echo "<script>alert('Já existe um caixa aberto! Feche-o primeiro.');window.location='index.php';</script>";
+            exit;
+        }
+
+        $register_id = $_POST['register_id'];
+        $stmt = $conn->prepare("UPDATE cash_register SET status = 'open', closing_date = NULL, closing_balance = NULL, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$register_id]);
+
+        echo "<script>alert('Caixa reaberto com sucesso!');window.location='index.php';</script>";
+        exit;
+    } catch (PDOException $e) {
+        echo "<script>alert('Erro ao reabrir caixa: " . $e->getMessage() . "');</script>";
+    }
+}
+
 // =============================
 // 🔍 BUSCAR CAIXA ATUAL
 // =============================
@@ -158,6 +185,22 @@ if ($current_register) {
         }
     }
     $current_balance = $current_register['opening_balance'] + $total_entries - $total_exits;
+}
+
+// =============================
+// 💳 DETALHAMENTO POR FORMA DE PAGAMENTO
+// =============================
+$payment_breakdown = [];
+if ($current_register) {
+    $stmt = $conn->prepare("
+        SELECT s.payment_method, COUNT(*) as qty, SUM(s.final_amount) as total
+        FROM sales s
+        WHERE s.status = 'completed' AND s.created_at >= ?
+        GROUP BY s.payment_method
+        ORDER BY total DESC
+    ");
+    $stmt->execute([$current_register['opening_date']]);
+    $payment_breakdown = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 // =============================
@@ -374,6 +417,21 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
         </div>
 
+        <?php if (!empty($payment_breakdown)): ?>
+        <div class="movements-box" style="margin-bottom:20px;">
+            <h2 style="margin-bottom:20px;"><i class="fas fa-credit-card"></i> Vendas por Forma de Pagamento</h2>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:15px;">
+                <?php foreach ($payment_breakdown as $pb): ?>
+                <div style="background:linear-gradient(135deg, #e8f8f5, #d5f5e3); padding:15px; border-radius:10px; text-align:center;">
+                    <div style="font-size:13px; color:#666; margin-bottom:5px;"><?= htmlspecialchars($pb['payment_method'] ?: 'Não informado') ?></div>
+                    <div style="font-size:22px; font-weight:bold; color:#00b894;">R$ <?= number_format($pb['total'], 2, ',', '.') ?></div>
+                    <div style="font-size:11px; color:#999; margin-top:3px;"><?= $pb['qty'] ?> venda(s)</div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="movements-box">
             <h2 style="margin-bottom:20px;"><i class="fas fa-exchange-alt"></i> Movimentações do Caixa</h2>
             <table class="table">
@@ -426,11 +484,12 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <th>Total Vendas</th>
                     <th>Total Despesas</th>
                     <th>Saldo Final</th>
+                    <?php if (($_SESSION['user_role'] ?? '') === 'admin'): ?><th>Ações</th><?php endif; ?>
                 </tr>
             </thead>
             <tbody>
                 <?php if(empty($history)): ?>
-                    <tr><td colspan="6" class="empty">Nenhum fechamento de caixa registrado.</td></tr>
+                    <tr><td colspan="7" class="empty">Nenhum fechamento de caixa registrado.</td></tr>
                 <?php else: foreach($history as $h): ?>
                 <tr>
                     <td>
@@ -442,6 +501,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <td style="color:#4CAF50;font-weight:bold;">R$ <?= number_format($h['total_sales'], 2, ',', '.') ?></td>
                     <td style="color:#f44336;font-weight:bold;">R$ <?= number_format($h['total_expenses'], 2, ',', '.') ?></td>
                     <td style="font-weight:bold;">R$ <?= number_format($h['closing_balance'], 2, ',', '.') ?></td>
+                    <?php if (($_SESSION['user_role'] ?? '') === 'admin'): ?>
+                    <td>
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Tem certeza que deseja reabrir este caixa?')">
+                            <input type="hidden" name="action" value="reopen">
+                            <input type="hidden" name="register_id" value="<?= $h['id'] ?>">
+                            <button type="submit" class="btn btn-sm" style="background:#ff7675; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;" title="Reabrir caixa">
+                                <i class="fas fa-lock-open"></i>
+                            </button>
+                        </form>
+                    </td>
+                    <?php endif; ?>
                 </tr>
                 <?php endforeach; endif; ?>
             </tbody>

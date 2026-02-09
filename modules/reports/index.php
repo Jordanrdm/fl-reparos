@@ -213,7 +213,7 @@ elseif ($report_type === 'service_orders') {
     $stmtCount = $conn->prepare("
         SELECT COUNT(*) as total
         FROM service_orders so
-        WHERE DATE(so.entry_date) BETWEEN ? AND ?
+        WHERE DATE(so.entry_datetime) BETWEEN ? AND ?
     ");
     $stmtCount->execute([$date_from, $date_to]);
     $totalRecords = $stmtCount->fetch(PDO::FETCH_ASSOC)['total'];
@@ -228,8 +228,8 @@ elseif ($report_type === 'service_orders') {
         FROM service_orders so
         LEFT JOIN customers c ON so.customer_id = c.id
         LEFT JOIN users u ON so.user_id = u.id
-        WHERE DATE(so.entry_date) BETWEEN ? AND ?
-        ORDER BY so.entry_date DESC
+        WHERE DATE(so.entry_datetime) BETWEEN ? AND ?
+        ORDER BY so.entry_datetime DESC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute([$date_from, $date_to, $perPage, $offset]);
@@ -240,10 +240,10 @@ elseif ($report_type === 'service_orders') {
         SELECT
             COUNT(*) as total_os,
             SUM(CASE WHEN status IN ('open', 'in_progress') THEN 1 ELSE 0 END) as total_open,
-            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as total_closed,
+            SUM(CASE WHEN status IN ('completed', 'delivered') THEN 1 ELSE 0 END) as total_closed,
             SUM(total_cost) as total_value
         FROM service_orders
-        WHERE DATE(entry_date) BETWEEN ? AND ?
+        WHERE DATE(entry_datetime) BETWEEN ? AND ?
     ");
     $stmtTotals->execute([$date_from, $date_to]);
     $totals = $stmtTotals->fetch(PDO::FETCH_ASSOC);
@@ -319,7 +319,7 @@ elseif ($report_type === 'consolidated') {
     $total_received = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
     // OS
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM service_orders WHERE DATE(entry_date) BETWEEN ? AND ?");
+    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM service_orders WHERE DATE(entry_datetime) BETWEEN ? AND ?");
     $stmt->execute([$date_from, $date_to]);
     $total_os = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
@@ -1038,7 +1038,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <?php else: foreach($data as $row): ?>
                     <tr>
                         <td><?= $row['id'] ?></td>
-                        <td><?= formatDate($row['entry_date']) ?></td>
+                        <td><?= formatDateTime($row['entry_datetime']) ?></td>
                         <td><?= htmlspecialchars($row['customer_name']) ?></td>
                         <td><?= htmlspecialchars($row['device']) ?></td>
                         <td><span class="badge <?= $row['status'] ?>"><?= traduzirStatus($row['status']) ?></span></td>

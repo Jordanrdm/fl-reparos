@@ -62,6 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     try {
         $conn->beginTransaction();
 
+        // Buscar status anterior e verificar permissão
+        $stmt = $conn->prepare("SELECT status, amount, description, user_id FROM expenses WHERE id = ?");
+        $stmt->execute([$_POST['id']]);
+        $checkOwner = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (($_SESSION['user_role'] ?? '') !== 'admin' && $checkOwner['user_id'] != $_SESSION['user_id']) {
+            throw new Exception('Sem permissão para editar esta despesa');
+        }
+
         // Buscar status anterior
         $stmt = $conn->prepare("SELECT status, amount, description FROM expenses WHERE id = ?");
         $stmt->execute([$_POST['id']]);
@@ -127,6 +135,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 // Excluir Despesa
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $id = (int) $_POST['id'];
+    // Verificar permissão: só admin ou dono da despesa
+    $checkStmt = $conn->prepare("SELECT user_id FROM expenses WHERE id = ?");
+    $checkStmt->execute([$id]);
+    $expenseOwner = $checkStmt->fetch(PDO::FETCH_ASSOC);
+    if (($_SESSION['user_role'] ?? '') !== 'admin' && $expenseOwner['user_id'] != $_SESSION['user_id']) {
+        echo "<script>alert('Sem permissão para excluir esta despesa');window.location='index.php';</script>";
+        exit;
+    }
     $stmt = $conn->prepare("DELETE FROM expenses WHERE id = ?");
     $stmt->execute([$id]);
     echo "<script>alert('Despesa excluída com sucesso!');window.location='index.php';</script>";
@@ -139,8 +155,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
 $search = $_GET['search'] ?? '';
 $filter_type = $_GET['type'] ?? '';
 $filter_status = $_GET['status'] ?? '';
+$isUserAdmin = ($_SESSION['user_role'] ?? '') === 'admin';
 $where = "WHERE 1=1";
 $params = [];
+
+// Não-admin só vê suas próprias despesas
+if (!$isUserAdmin) {
+    $where .= " AND e.user_id = ?";
+    $params[] = $_SESSION['user_id'];
+}
 
 if (!empty($search)) {
     $where .= " AND (e.description LIKE ? OR e.observations LIKE ?)";
@@ -174,9 +197,10 @@ $suppliers = $conn->query("SELECT id, name FROM users ORDER BY name ASC")->fetch
 // =============================
 // 📊 ESTATÍSTICAS
 // =============================
-$total_pago = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 'pago'")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_pendente = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 'pendente'")->fetch(PDO::FETCH_ASSOC)['total'];
-$total_mes = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE MONTH(expense_date) = MONTH(CURRENT_DATE) AND YEAR(expense_date) = YEAR(CURRENT_DATE)")->fetch(PDO::FETCH_ASSOC)['total'];
+$statsFilter = $isUserAdmin ? "" : " AND user_id = " . intval($_SESSION['user_id']);
+$total_pago = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 'pago'" . $statsFilter)->fetch(PDO::FETCH_ASSOC)['total'];
+$total_pendente = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE status = 'pendente'" . $statsFilter)->fetch(PDO::FETCH_ASSOC)['total'];
+$total_mes = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE MONTH(expense_date) = MONTH(CURRENT_DATE) AND YEAR(expense_date) = YEAR(CURRENT_DATE)" . $statsFilter)->fetch(PDO::FETCH_ASSOC)['total'];
 
 // =============================
 // 🎨 FUNÇÕES AUXILIARES

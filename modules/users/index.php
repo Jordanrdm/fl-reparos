@@ -114,6 +114,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
 }
 
 // =============================
+// 🔐 SALVAR PERMISSÕES
+// =============================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'save_permissions') {
+    try {
+        $userId = (int)$_POST['user_id'];
+        $modules = [
+            'pdv' => ['view', 'create', 'edit', 'delete'],
+            'service_orders' => ['view', 'create', 'edit', 'delete'],
+            'products' => ['view', 'create', 'edit', 'delete'],
+            'customers' => ['view', 'create', 'edit', 'delete'],
+            'expenses' => ['view', 'create', 'edit', 'delete'],
+            'cashflow' => ['view', 'create', 'edit', 'delete'],
+            'accounts_receivable' => ['view', 'create', 'edit', 'delete'],
+            'reports' => ['view'],
+        ];
+
+        $useCustom = isset($_POST['use_custom']) && $_POST['use_custom'] == '1';
+
+        if ($useCustom) {
+            $permissions = [];
+            foreach ($modules as $mod => $actions) {
+                $modPerms = [];
+                foreach ($actions as $act) {
+                    if (isset($_POST['perm_' . $mod . '_' . $act])) {
+                        $modPerms[] = $act;
+                    }
+                }
+                if (!empty($modPerms)) {
+                    $permissions[$mod] = $modPerms;
+                }
+            }
+            $permJson = json_encode($permissions);
+        } else {
+            $permJson = null;
+        }
+
+        $stmt = $conn->prepare("UPDATE users SET permissions = ? WHERE id = ?");
+        $stmt->execute([$permJson, $userId]);
+
+        echo "<script>alert('Permissões salvas com sucesso! O usuário precisa fazer login novamente para aplicar.');window.location='index.php';</script>";
+        exit;
+    } catch (PDOException $e) {
+        echo "<script>alert('Erro ao salvar permissões: " . addslashes($e->getMessage()) . "');</script>";
+    }
+}
+
+// =============================
 // 🔧 CRUD Técnicos
 // =============================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_technician') {
@@ -459,6 +506,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <button class="btn btn-secondary btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
                             <i class="fas fa-edit"></i>
                         </button>
+                        <?php if($row['role'] !== 'admin'): ?>
+                        <button class="btn btn-sm" style="background:#667eea;color:white;border:none;padding:5px 8px;border-radius:5px;cursor:pointer;" onclick='openPermissionsModal(<?= json_encode($row) ?>)' title="Permissões">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <?php endif; ?>
                         <?php if($row['id'] != $_SESSION['user_id']): ?>
                         <form method="POST" onsubmit="return confirm('Excluir este usuário?');" style="display:inline;">
                             <input type="hidden" name="action" value="delete">
@@ -715,6 +767,87 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 </div>
 
+<!-- Modal Permissões -->
+<div id="permissionsModal" class="modal">
+    <div class="modal-content" style="max-width:600px;">
+        <div class="modal-header" style="background:linear-gradient(135deg, #667eea, #764ba2);">
+            <h2 style="color:white;"><i class="fas fa-key"></i> Permissões - <span id="perm_user_name"></span></h2>
+            <button class="close" onclick="closeModal('permissionsModal')" style="color:white;">&times;</button>
+        </div>
+        <form method="POST">
+            <input type="hidden" name="action" value="save_permissions">
+            <input type="hidden" name="user_id" id="perm_user_id">
+
+            <div style="padding:20px;">
+                <div style="margin-bottom:15px;padding:12px;background:#fff3cd;border-radius:8px;border-left:4px solid #ffc107;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:bold;">
+                        <input type="checkbox" name="use_custom" id="perm_use_custom" value="1" onchange="toggleCustomPerms()">
+                        Usar permissões personalizadas (sobrepõe o perfil padrão)
+                    </label>
+                </div>
+
+                <div id="perm_grid" style="opacity:0.5;pointer-events:none;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="background:#f8f9fa;">
+                                <th style="padding:10px;text-align:left;border-bottom:2px solid #dee2e6;">Módulo</th>
+                                <th style="padding:10px;text-align:center;border-bottom:2px solid #dee2e6;">Ver</th>
+                                <th style="padding:10px;text-align:center;border-bottom:2px solid #dee2e6;">Criar</th>
+                                <th style="padding:10px;text-align:center;border-bottom:2px solid #dee2e6;">Editar</th>
+                                <th style="padding:10px;text-align:center;border-bottom:2px solid #dee2e6;">Excluir</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            $moduleNames = [
+                                'pdv' => 'PDV Rápido',
+                                'service_orders' => 'Ordens de Serviço',
+                                'products' => 'Produtos',
+                                'customers' => 'Clientes',
+                                'expenses' => 'Despesas',
+                                'cashflow' => 'Fluxo de Caixa',
+                                'accounts_receivable' => 'Contas a Receber',
+                                'reports' => 'Relatórios',
+                            ];
+                            $moduleActions = [
+                                'pdv' => ['view', 'create', 'edit', 'delete'],
+                                'service_orders' => ['view', 'create', 'edit', 'delete'],
+                                'products' => ['view', 'create', 'edit', 'delete'],
+                                'customers' => ['view', 'create', 'edit', 'delete'],
+                                'expenses' => ['view', 'create', 'edit', 'delete'],
+                                'cashflow' => ['view', 'create', 'edit', 'delete'],
+                                'accounts_receivable' => ['view', 'create', 'edit', 'delete'],
+                                'reports' => ['view'],
+                            ];
+                            foreach ($moduleNames as $mod => $label):
+                                $actions = $moduleActions[$mod];
+                            ?>
+                            <tr style="border-bottom:1px solid #eee;">
+                                <td style="padding:8px 10px;font-weight:bold;"><?= $label ?></td>
+                                <?php foreach (['view', 'create', 'edit', 'delete'] as $act): ?>
+                                <td style="padding:8px 10px;text-align:center;">
+                                    <?php if (in_array($act, $actions)): ?>
+                                    <input type="checkbox" name="perm_<?= $mod ?>_<?= $act ?>" id="perm_<?= $mod ?>_<?= $act ?>" value="1" style="width:18px;height:18px;cursor:pointer;">
+                                    <?php else: ?>
+                                    <span style="color:#ccc;">-</span>
+                                    <?php endif; ?>
+                                </td>
+                                <?php endforeach; ?>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="text-align:right;padding:15px 20px;border-top:1px solid #eee;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar Permissões</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('permissionsModal')"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}
@@ -726,6 +859,49 @@ function openEditModal(o){
     document.getElementById('edit_role').value=o.role||'operator';
     document.getElementById('edit_status').value=o.status||'active';
     openModal('editModal');
+}
+
+function openPermissionsModal(user) {
+    document.getElementById('perm_user_id').value = user.id;
+    document.getElementById('perm_user_name').textContent = user.name;
+
+    const perms = user.permissions ? JSON.parse(user.permissions) : null;
+    const useCustom = document.getElementById('perm_use_custom');
+
+    // Desmarcar todos os checkboxes primeiro
+    document.querySelectorAll('#perm_grid input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+    if (perms) {
+        useCustom.checked = true;
+        // Marcar permissões existentes
+        for (const mod in perms) {
+            perms[mod].forEach(act => {
+                const cb = document.getElementById('perm_' + mod + '_' + act);
+                if (cb) cb.checked = true;
+            });
+        }
+    } else {
+        useCustom.checked = false;
+        // Preencher com permissões padrão do perfil
+        const defaults = <?= json_encode($PERMISSIONS) ?>;
+        const rolePerms = defaults[user.role] || {};
+        for (const mod in rolePerms) {
+            rolePerms[mod].forEach(act => {
+                const cb = document.getElementById('perm_' + mod + '_' + act);
+                if (cb) cb.checked = true;
+            });
+        }
+    }
+
+    toggleCustomPerms();
+    openModal('permissionsModal');
+}
+
+function toggleCustomPerms() {
+    const grid = document.getElementById('perm_grid');
+    const checked = document.getElementById('perm_use_custom').checked;
+    grid.style.opacity = checked ? '1' : '0.5';
+    grid.style.pointerEvents = checked ? 'auto' : 'none';
 }
 
 // Fechar modal ao clicar fora
@@ -740,6 +916,7 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeModal('createModal');
         closeModal('editModal');
+        closeModal('permissionsModal');
     }
 });
 </script>

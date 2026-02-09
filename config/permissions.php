@@ -62,12 +62,21 @@ function hasPermission($module, $action = 'view') {
         return true;
     }
 
-    // Verifica se o módulo existe para o perfil
+    // Verificar permissões personalizadas do usuário (prioridade sobre o perfil)
+    if (!empty($_SESSION['user_permissions'])) {
+        $custom = $_SESSION['user_permissions'];
+        if (isset($custom[$module])) {
+            return in_array($action, $custom[$module]);
+        }
+        // Se o módulo não está nas permissões customizadas, o usuário NÃO tem acesso
+        return false;
+    }
+
+    // Fallback: permissões padrão do perfil
     if (!isset($PERMISSIONS[$role][$module])) {
         return false;
     }
 
-    // Verifica se tem a permissão específica
     return in_array($action, $PERMISSIONS[$role][$module]);
 }
 
@@ -85,6 +94,16 @@ function canViewModule($module) {
     }
 
     $role = $_SESSION['user_role'];
+
+    // Admin sempre vê tudo
+    if ($role === 'admin') {
+        return true;
+    }
+
+    // Se tem permissões customizadas, verifica se o módulo está lá
+    if (!empty($_SESSION['user_permissions'])) {
+        return isset($_SESSION['user_permissions'][$module]);
+    }
 
     return in_array($module, $VISIBLE_MODULES[$role] ?? []);
 }
