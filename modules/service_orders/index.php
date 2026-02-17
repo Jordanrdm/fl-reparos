@@ -474,7 +474,7 @@ $technicians = $conn->query("SELECT id, name FROM technicians WHERE active = 1 O
 $attendants = $conn->query("SELECT id, name FROM attendants WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Buscar produtos para o formulário
-$products = $conn->query("SELECT id, name, sale_price as price, stock_quantity, COALESCE(type,'product') as type, allow_price_edit FROM products WHERE active = 1 AND (stock_quantity > 0 OR type = 'service') ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$products = $conn->query("SELECT id, name, sale_price as price, stock_quantity, COALESCE(type,'product') as type, allow_price_edit FROM products WHERE active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // =============================
 // 📊 ESTATÍSTICAS
@@ -1033,13 +1033,22 @@ tr:hover {background:rgba(103,58,183,0.1);}
 
                 let html = '';
                 filteredProducts.forEach(p => {
-                    html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
-                                  onmouseover="this.style.background='#f8f9ff'"
-                                  onmouseout="this.style.background='white'"
-                                  onclick="selectProduct('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.price}, ${p.stock_quantity})">
-                        <strong>${p.name}</strong><br>
-                        <small style="color:#666;">R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')} - Estoque: ${p.stock_quantity}</small>
-                    </div>`;
+                    const outOfStock = parseInt(p.stock_quantity) <= 0;
+                    if (outOfStock) {
+                        html += `<div style="padding:10px;border-bottom:1px solid #f0f0f0;opacity:0.7;cursor:not-allowed;background:#fff5f5;">
+                            <strong style="color:#999;">${p.name}</strong>
+                            <span style="background:#ff4444;color:white;padding:2px 8px;border-radius:10px;font-size:0.7rem;margin-left:8px;">SEM ESTOQUE</span><br>
+                            <small style="color:#999;">R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')} - Estoque: 0</small>
+                        </div>`;
+                    } else {
+                        html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
+                                      onmouseover="this.style.background='#f8f9ff'"
+                                      onmouseout="this.style.background='white'"
+                                      onclick="selectProduct('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.price}, ${p.stock_quantity}, ${p.allow_price_edit || 0})">
+                            <strong>${p.name}</strong><br>
+                            <small style="color:#666;">R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')} - Estoque: ${p.stock_quantity}</small>
+                        </div>`;
+                    }
                 });
 
                 resultsDiv.innerHTML = html;
@@ -1073,7 +1082,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
                                   onmouseover="this.style.background='#f0fff0'"
                                   onmouseout="this.style.background='white'"
-                                  onclick="selectService('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${priceVal || 'null'})">
+                                  onclick="selectService('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${priceVal || 'null'}, ${p.allow_price_edit || 0})">
                         <strong><i class="fas fa-tools" style="color:#4CAF50;"></i> ${p.name}</strong><br>
                         <small style="color:#666;">${priceText}</small>
                     </div>`;
@@ -1083,21 +1092,39 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 resultsDiv.style.display = 'block';
             }
 
-            function selectProduct(mode, id, name, price, stock) {
+            function selectProduct(mode, id, name, price, stock, allowPriceEdit) {
                 document.getElementById(mode + '_product_search').value = name;
                 document.getElementById(mode + '_selected_product_id').value = id;
                 document.getElementById(mode + '_selected_product_name').value = name;
                 document.getElementById(mode + '_product_price_input').value = parseFloat(price).toFixed(2);
                 document.getElementById(mode + '_selected_product_stock').value = stock;
                 document.getElementById(mode + '_product_results').style.display = 'none';
+
+                const priceInput = document.getElementById(mode + '_product_price_input');
+                if (parseInt(allowPriceEdit) === 1) {
+                    priceInput.readOnly = false;
+                    priceInput.style.background = '';
+                } else {
+                    priceInput.readOnly = true;
+                    priceInput.style.background = '#e9ecef';
+                }
             }
 
-            function selectService(mode, id, name, price) {
+            function selectService(mode, id, name, price, allowPriceEdit) {
                 document.getElementById(mode + '_service_search').value = name;
                 document.getElementById(mode + '_selected_service_id').value = id;
                 document.getElementById(mode + '_selected_service_name').value = name;
                 document.getElementById(mode + '_service_price').value = price ? parseFloat(price).toFixed(2) : '';
                 document.getElementById(mode + '_service_results').style.display = 'none';
+
+                const priceInput = document.getElementById(mode + '_service_price');
+                if (parseInt(allowPriceEdit) === 1) {
+                    priceInput.readOnly = false;
+                    priceInput.style.background = '';
+                } else {
+                    priceInput.readOnly = true;
+                    priceInput.style.background = '#e9ecef';
+                }
             }
 
             // Fechar dropdown ao clicar fora
@@ -1884,6 +1911,7 @@ function addProductToOS(mode) {
 
     if (!productId) { alert('Selecione um produto'); return; }
     if (!price || price <= 0) { alert('Informe o preço do produto'); return; }
+    if (stock <= 0) { alert('Produto sem estoque disponível!'); return; }
     if (quantity > stock) { alert('Quantidade indisponível! Estoque: ' + stock); return; }
 
     const item = {
@@ -1903,6 +1931,8 @@ function addProductToOS(mode) {
     document.getElementById(mode + '_selected_product_id').value = '';
     document.getElementById(mode + '_selected_product_name').value = '';
     document.getElementById(mode + '_product_price_input').value = '';
+    document.getElementById(mode + '_product_price_input').readOnly = false;
+    document.getElementById(mode + '_product_price_input').style.background = '';
     document.getElementById(mode + '_selected_product_stock').value = '';
     quantityInput.value = 1;
 }
@@ -1934,6 +1964,8 @@ function addServiceToOS(mode) {
     document.getElementById(mode + '_selected_service_id').value = '';
     document.getElementById(mode + '_selected_service_name').value = '';
     document.getElementById(mode + '_service_price').value = '';
+    document.getElementById(mode + '_service_price').readOnly = false;
+    document.getElementById(mode + '_service_price').style.background = '';
     quantityInput.value = 1;
 }
 

@@ -94,7 +94,7 @@ CREATE TABLE `cash_flow` (
   KEY `user_id` (`user_id`),
   KEY `type` (`type`),
   CONSTRAINT `cash_flow_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -103,7 +103,7 @@ CREATE TABLE `cash_flow` (
 
 LOCK TABLES `cash_flow` WRITE;
 /*!40000 ALTER TABLE `cash_flow` DISABLE KEYS */;
-INSERT INTO `cash_flow` VALUES (1,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-07 16:11:17'),(2,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-07 16:11:23'),(3,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-08 13:41:45'),(4,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-08 13:43:17'),(8,8,'sale','Venda #27 - Dinheiro - Cliente: Ana Costa',80.00,27,'sale','2026-02-08 20:54:53'),(9,8,'sale','Venda #28 - Cartão de Débito',80.00,28,'sale','2026-02-08 20:55:33'),(11,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 11:18:18'),(12,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 11:18:27'),(13,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 23:21:32'),(14,10,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 23:21:36'),(16,10,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 23:28:16'),(17,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 23:28:21');
+INSERT INTO `cash_flow` VALUES (1,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-07 16:11:17'),(2,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-07 16:11:23'),(3,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-08 13:41:45'),(4,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-08 13:43:17'),(8,8,'sale','Venda #27 - Dinheiro - Cliente: Ana Costa',80.00,27,'sale','2026-02-08 20:54:53'),(9,8,'sale','Venda #28 - Cartão de Débito',80.00,28,'sale','2026-02-08 20:55:33'),(11,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 11:18:18'),(12,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 11:18:27'),(13,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 23:21:32'),(14,10,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 23:21:36'),(16,10,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-09 23:28:16'),(17,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-09 23:28:21'),(18,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-11 23:39:37'),(19,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-11 23:39:41'),(20,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-14 12:40:55'),(21,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 16:33:32'),(22,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 16:41:08'),(23,9,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 16:41:12'),(24,9,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:05:55'),(25,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:05:59'),(26,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:10:45'),(27,9,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:10:57'),(28,9,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:17:59'),(29,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:18:09'),(30,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:37:14'),(31,11,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:37:18'),(32,11,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:46:07'),(33,11,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:46:16'),(34,11,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:48:18'),(35,8,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:48:23'),(36,8,'closing','Logout do sistema',0.00,NULL,NULL,'2026-02-17 17:54:18'),(37,11,'opening','Login no sistema',0.00,NULL,NULL,'2026-02-17 17:54:24');
 /*!40000 ALTER TABLE `cash_flow` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -199,7 +199,7 @@ CREATE TABLE `customers` (
   `deleted_at` timestamp NULL DEFAULT NULL COMMENT 'Data de deleção (soft delete)',
   PRIMARY KEY (`id`),
   KEY `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -208,7 +208,7 @@ CREATE TABLE `customers` (
 
 LOCK TABLES `customers` WRITE;
 /*!40000 ALTER TABLE `customers` DISABLE KEYS */;
-INSERT INTO `customers` VALUES (1,'João Silva','123.456.789-10','(85) 99999-1234',NULL,'joao@email.com','Rua das Flores, 123',NULL,'Fortaleza','CE','60000-000','Cliente preferencial','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(2,'Maria Santos','987.654.321-00','(85) 88888-5678',NULL,'maria@email.com','Av. Principal, 456',NULL,'Fortaleza','CE','60100-000','Reparo de iPhone','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(3,'Pedro Oliveira','111.222.333-44','(85) 77777-9999',NULL,'pedro@email.com','Rua do Comércio, 789',NULL,'Fortaleza','CE','60200-000','Cliente desde 2020','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(4,'Ana Costa','555.666.777-88','(85) 66666-1111',NULL,'ana@email.com','Praça Central, 321',NULL,'Fortaleza','CE','60300-000','Compra acessórios','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(5,'Carlos Ferreira','999.888.777-66','(85) 55555-2222',NULL,'carlos@email.com','Rua Nova, 654',NULL,'Fortaleza','CE','60400-000','Técnico em eletrônicos','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL);
+INSERT INTO `customers` VALUES (1,'João Silva','123.456.789-10','(85) 99999-1234',NULL,'joao@email.com','Rua das Flores, 123',NULL,'Fortaleza','CE','60000-000','Cliente preferencial','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(2,'Maria Santos','987.654.321-00','(85) 88888-5678',NULL,'maria@email.com','Av. Principal, 456',NULL,'Fortaleza','CE','60100-000','Reparo de iPhone','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(3,'Pedro Oliveira','111.222.333-44','(85) 77777-9999',NULL,'pedro@email.com','Rua do Comércio, 789',NULL,'Fortaleza','CE','60200-000','Cliente desde 2020','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(4,'Ana Costa','555.666.777-88','(85) 66666-1111',NULL,'ana@email.com','Praça Central, 321',NULL,'Fortaleza','CE','60300-000','Compra acessórios','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(5,'Carlos Ferreira','999.888.777-66','(85) 55555-2222',NULL,'carlos@email.com','Rua Nova, 654',NULL,'Fortaleza','CE','60400-000','Técnico em eletrônicos','2025-07-29 20:47:50','2025-07-29 20:47:50',NULL),(9,'Jordan Rodrigues','12345678912','85997458954',NULL,'jordan@gmail.com','',NULL,'','','','','2026-02-17 17:09:24','2026-02-17 17:09:24',NULL),(10,'Vendedor teste','00000012345','85997452323',NULL,'vendedor@gmail.com','',NULL,'','','','','2026-02-17 17:12:03','2026-02-17 17:12:03',NULL);
 /*!40000 ALTER TABLE `customers` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -311,7 +311,7 @@ CREATE TABLE `products` (
   PRIMARY KEY (`id`),
   KEY `category_id` (`category_id`),
   CONSTRAINT `products_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -320,7 +320,7 @@ CREATE TABLE `products` (
 
 LOCK TABLES `products` WRITE;
 /*!40000 ALTER TABLE `products` DISABLE KEYS */;
-INSERT INTO `products` VALUES (1,'product','iPhone 14 Pro 128GB',NULL,'IP14P128','1234567890123',1,4500.00,5200.00,'UN',15.56,700.00,NULL,NULL,NULL,1,21,2,'iPhone 14 Pro 128GB - Cor Azul',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(2,'product','Samsung Galaxy S23',NULL,'SGS23','2345678901234',1,3200.00,3800.00,'UN',18.75,600.00,NULL,NULL,NULL,1,8,3,'Samsung Galaxy S23 256GB',0,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(3,'product','Película de Vidro Temperado',NULL,'PVT001','3456789012345',2,8.50,25.00,'UN',194.12,16.50,NULL,NULL,NULL,1,46,10,'Película universal para smartphones',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(4,'product','Capa TPU Transparente',NULL,'CTPU001','4567890123456',2,5.00,15.00,'UN',200.00,10.00,NULL,NULL,NULL,1,28,5,'Capa TPU flexível transparente',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(5,'product','Display iPhone 12',NULL,'DIP12','5678901234567',3,180.00,280.00,'UN',55.56,100.00,NULL,NULL,NULL,1,29,2,'Display original iPhone 12',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(6,'product','Bateria Samsung A32',NULL,'BSA32','6789012345678',3,45.00,80.00,'UN',77.78,35.00,NULL,NULL,NULL,1,12,3,'Bateria original Samsung Galaxy A32s',1,'2025-07-29 19:40:26','2026-02-09 23:22:58'),(7,'product','Kit Chaves para Celular',NULL,'KCC001','7890123456789',4,25.00,45.00,'UN',80.00,20.00,NULL,NULL,NULL,1,4,2,'Kit com 8 chaves para abertura de smartphones',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(8,'product','Cabo Iphone',NULL,'CBIPH7','',2,14.00,35.00,'UN',150.00,21.00,NULL,NULL,NULL,1,0,2,'',1,'2025-07-30 01:59:03','2026-02-09 01:17:31'),(9,'product','Suporte Veicular',NULL,'SPV745','',2,15.00,49.99,'UN',233.27,34.99,NULL,NULL,NULL,1,4,2,'Suporte para Veiculo',1,'2025-07-30 01:59:56','2026-02-09 01:17:31'),(10,'product','teste',NULL,'000000','00000',4,100.00,120.00,'UN',20.00,20.00,NULL,NULL,NULL,1,1,1,'',0,'2025-11-16 19:56:14','2026-02-09 01:17:31'),(11,'product','teste','prod_69894cde60f0e.jpeg','123456789','123456789',2,10.00,20.00,'UN',100.00,10.00,'','','',1,10,1,'',1,'2026-02-09 02:56:30','2026-02-09 02:56:30'),(13,'service','teste',NULL,'323232','323232',4,NULL,100.00,'UN',0.00,NULL,'','','',1,999,0,'',1,'2026-02-09 23:13:48','2026-02-09 23:13:48');
+INSERT INTO `products` VALUES (1,'product','iPhone 14 Pro 128GB',NULL,'IP14P128','1234567890123',1,4500.00,5200.00,'UN',15.56,700.00,NULL,NULL,NULL,1,21,2,'iPhone 14 Pro 128GB - Cor Azul',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(2,'product','Samsung Galaxy S23',NULL,'SGS23','2345678901234',1,3200.00,3800.00,'UN',18.75,600.00,NULL,NULL,NULL,1,8,3,'Samsung Galaxy S23 256GB',0,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(3,'product','Película de Vidro Temperado',NULL,'PVT001','3456789012345',2,8.50,25.00,'UN',194.12,16.50,NULL,NULL,NULL,1,46,10,'Película universal para smartphones',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(4,'product','Capa TPU Transparente',NULL,'CTPU001','4567890123456',2,5.00,15.00,'UN',200.00,10.00,NULL,NULL,NULL,1,28,5,'Capa TPU flexível transparente',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(5,'product','Display iPhone 12',NULL,'DIP12','5678901234567',3,180.00,280.00,'UN',55.56,100.00,NULL,NULL,NULL,1,29,2,'Display original iPhone 12',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(6,'product','Bateria Samsung A32',NULL,'BSA32','6789012345678',3,45.00,80.00,'UN',77.78,35.00,NULL,NULL,NULL,1,12,3,'Bateria original Samsung Galaxy A32s',1,'2025-07-29 19:40:26','2026-02-09 23:22:58'),(7,'product','Kit Chaves para Celular',NULL,'KCC001','7890123456789',4,25.00,45.00,'UN',80.00,20.00,NULL,NULL,NULL,1,4,2,'Kit com 8 chaves para abertura de smartphones',1,'2025-07-29 19:40:26','2026-02-09 01:17:31'),(8,'product','Cabo Iphone',NULL,'CBIPH7','',2,14.00,35.00,'UN',150.00,21.00,NULL,NULL,NULL,1,0,2,'',1,'2025-07-30 01:59:03','2026-02-09 01:17:31'),(9,'product','Suporte Veicular',NULL,'SPV745','',2,15.00,49.99,'UN',233.27,34.99,NULL,NULL,NULL,1,4,2,'Suporte para Veiculo',1,'2025-07-30 01:59:56','2026-02-09 01:17:31'),(10,'product','teste',NULL,'000000','00000',4,100.00,120.00,'UN',20.00,20.00,NULL,NULL,NULL,1,1,1,'',0,'2025-11-16 19:56:14','2026-02-09 01:17:31'),(11,'product','teste','prod_69894cde60f0e.jpeg','123456789','123456789',2,10.00,20.00,'UN',100.00,10.00,'','','',1,10,1,'',1,'2026-02-09 02:56:30','2026-02-09 02:56:30'),(13,'service','teste',NULL,'323232','323232',4,NULL,100.00,'UN',0.00,NULL,'','','',1,999,0,'',1,'2026-02-09 23:13:48','2026-02-09 23:13:48'),(14,'product','Produto teste','prod_69906dd0877b9.jpeg','123456','123456',2,10.00,50.00,'UN',400.00,40.00,'AA','','',1,20,5,'',1,'2026-02-14 12:42:56','2026-02-14 12:42:56'),(15,'service','Serviço teste','prod_69906f09244c8.jpeg','123456','123456',4,NULL,50.00,'UN',0.00,NULL,'AA','','',1,999,0,'',1,'2026-02-14 12:48:09','2026-02-14 12:48:09'),(16,'product','Produto vendendor teste','prod_69949af807f2e.jpg','123456789','123456789',2,5.00,50.00,'UN',900.00,45.00,'','','',1,13,0,'',1,'2026-02-17 16:44:40','2026-02-17 16:55:05'),(17,'service','Serviço vendedor teste','prod_69949b66b3780.webp','123435535','123435535',4,NULL,50.00,'UN',0.00,NULL,'','','',1,999,0,'',1,'2026-02-17 16:46:30','2026-02-17 16:46:30'),(18,'product','teste vendedor','prod_69949cfe85d90.jpg','123444','123444',2,5.00,50.00,'UN',900.00,45.00,'','','',1,0,0,'',1,'2026-02-17 16:53:18','2026-02-17 16:53:18'),(19,'service','serviço teste vendedor','prod_69949d243ceee.webp','123443434','123443434',4,NULL,50.00,'UN',0.00,NULL,'','','',1,999,0,'',1,'2026-02-17 16:53:56','2026-02-17 16:53:56'),(20,'product','Geladeira','prod_6994a9119f064.jpeg','123434435','123434435',2,5.00,50.00,'UN',900.00,45.00,'','','',0,49,0,'',1,'2026-02-17 17:44:49','2026-02-17 17:58:11'),(21,'product','Padinha','prod_6994b0b487367.webp','1234576787','1234576787',2,5.00,20.00,'UN',300.00,15.00,'','','',0,0,0,'',1,'2026-02-17 18:17:24','2026-02-17 18:17:24');
 /*!40000 ALTER TABLE `products` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -415,7 +415,7 @@ CREATE TABLE `service_order_items` (
   KEY `product_id` (`product_id`),
   CONSTRAINT `service_order_items_ibfk_1` FOREIGN KEY (`service_order_id`) REFERENCES `service_orders` (`id`) ON DELETE CASCADE,
   CONSTRAINT `service_order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -424,7 +424,7 @@ CREATE TABLE `service_order_items` (
 
 LOCK TABLES `service_order_items` WRITE;
 /*!40000 ALTER TABLE `service_order_items` DISABLE KEYS */;
-INSERT INTO `service_order_items` VALUES (2,4,6,'Bateria Samsung A32',1,10.00,10.00,'product','2026-02-09 20:32:20'),(12,5,6,'Bateria Samsung A32',1,80.00,80.00,'product','2026-02-09 23:22:58'),(13,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58'),(14,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58'),(15,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58');
+INSERT INTO `service_order_items` VALUES (2,4,6,'Bateria Samsung A32',1,10.00,10.00,'product','2026-02-09 20:32:20'),(12,5,6,'Bateria Samsung A32',1,80.00,80.00,'product','2026-02-09 23:22:58'),(13,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58'),(14,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58'),(15,5,13,'teste',1,100.00,100.00,'service','2026-02-09 23:22:58'),(18,7,17,'Serviço vendedor teste',1,50.00,50.00,'service','2026-02-17 16:50:54'),(19,7,16,'Produto vendendor teste',1,40.00,40.00,'product','2026-02-17 16:50:54'),(20,8,16,'Produto vendendor teste',1,30.00,30.00,'product','2026-02-17 16:55:05'),(21,8,19,'serviço teste vendedor',1,50.00,50.00,'service','2026-02-17 16:55:05'),(22,9,20,'Geladeira',1,40.00,40.00,'product','2026-02-17 17:58:11');
 /*!40000 ALTER TABLE `service_order_items` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -490,7 +490,7 @@ CREATE TABLE `service_orders` (
   KEY `user_id` (`user_id`),
   CONSTRAINT `service_orders_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`),
   CONSTRAINT `service_orders_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -499,7 +499,7 @@ CREATE TABLE `service_orders` (
 
 LOCK TABLES `service_orders` WRITE;
 /*!40000 ALTER TABLE `service_orders` DISABLE KEYS */;
-INSERT INTO `service_orders` VALUES (1,4,'2026-02-08 23:31:22',NULL,8,'Iphone 15','celular','',NULL,NULL,0.00,'',NULL,1,'in_progress','','','','','sim','',NULL,0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 02:31:22','2026-02-09 02:32:58',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(2,4,'2026-02-09 09:24:41',NULL,8,'Iphone 15','celular','',NULL,NULL,0.00,'dinheiro',NULL,1,'open','','','','','sim','','1,2,3,5,6,7',0,0,0,0,1,0,0,0,0,0,'',NULL,'2026-02-09 12:24:41','2026-02-09 12:24:41',NULL,0.00,0.00,'arranhada','',1,1,'frontal',0,0,'90 dias',NULL,''),(4,4,'2026-02-09 17:31:06',NULL,8,'Iphone 15','celular','',NULL,NULL,10.00,'dinheiro','[{\"method\":\"dinheiro\",\"amount\":100,\"installments\":1},{\"method\":\"cartao_credito\",\"amount\":50,\"installments\":1}]',1,'open','','ddkkkkkkkkkkkkkkkkkkkkkkkkk','ffffffffff','','sim','123456','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 20:31:06','2026-02-09 20:32:20',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(5,4,'2026-02-09 20:09:43','2026-02-09 20:22:58',8,'Iphone 15','celular','',NULL,NULL,380.00,'dinheiro','[{\"method\":\"dinheiro\",\"amount\":200,\"installments\":1,\"change\":0},{\"method\":\"cartao_credito\",\"amount\":180,\"installments\":2,\"change\":0}]',1,'delivered','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 23:09:43','2026-02-09 23:22:58',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,'');
+INSERT INTO `service_orders` VALUES (1,4,'2026-02-08 23:31:22',NULL,8,'Iphone 15','celular','',NULL,NULL,0.00,'',NULL,1,'in_progress','','','','','sim','',NULL,0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 02:31:22','2026-02-09 02:32:58',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(2,4,'2026-02-09 09:24:41',NULL,8,'Iphone 15','celular','',NULL,NULL,0.00,'dinheiro',NULL,1,'open','','','','','sim','','1,2,3,5,6,7',0,0,0,0,1,0,0,0,0,0,'',NULL,'2026-02-09 12:24:41','2026-02-09 12:24:41',NULL,0.00,0.00,'arranhada','',1,1,'frontal',0,0,'90 dias',NULL,''),(4,4,'2026-02-09 17:31:06',NULL,8,'Iphone 15','celular','',NULL,NULL,10.00,'dinheiro','[{\"method\":\"dinheiro\",\"amount\":100,\"installments\":1},{\"method\":\"cartao_credito\",\"amount\":50,\"installments\":1}]',1,'open','','ddkkkkkkkkkkkkkkkkkkkkkkkkk','ffffffffff','','sim','123456','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 20:31:06','2026-02-09 20:32:20',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(5,4,'2026-02-09 20:09:43','2026-02-09 20:22:58',8,'Iphone 15','celular','',NULL,NULL,380.00,'dinheiro','[{\"method\":\"dinheiro\",\"amount\":200,\"installments\":1,\"change\":0},{\"method\":\"cartao_credito\",\"amount\":180,\"installments\":2,\"change\":0}]',1,'delivered','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-09 23:09:43','2026-02-09 23:22:58',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(6,4,'2026-02-14 09:49:54',NULL,8,'Iphone 15','celular','',NULL,NULL,0.00,NULL,'[]',1,'open','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-14 12:49:54','2026-02-14 12:49:54',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(7,5,'2026-02-17 13:50:22',NULL,9,'Iphone 15','celular','',NULL,NULL,90.00,NULL,'[]',1,'open','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-17 16:50:22','2026-02-17 16:50:54',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(8,1,'2026-02-17 13:55:05',NULL,9,'Iphone 15','celular','',NULL,NULL,80.00,NULL,'[]',1,'open','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-17 16:55:05','2026-02-17 16:55:05',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,''),(9,9,'2026-02-17 14:58:11',NULL,11,'Iphone 15','celular','',NULL,NULL,40.00,NULL,'[]',1,'open','','','','','sim','','',0,0,0,0,0,0,0,0,0,0,'',NULL,'2026-02-17 17:58:11','2026-02-17 17:58:11',NULL,0.00,0.00,'','',0,0,'',0,0,'90 dias',NULL,'');
 /*!40000 ALTER TABLE `service_orders` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -552,7 +552,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   KEY `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -561,7 +561,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (8,'Administrador','admin@flreparos.com','$2y$10$PkZAF3XLBEpMjUd.ukDVDOnMOZ4nfWrhmnuggg5laolofTdgLBW2u','admin',NULL,'active',1,'2026-02-07 15:07:41','2026-02-07 15:07:41',NULL),(9,'testepermissao','testepermissao@gmail.com','$2y$10$dGFMn0l4IvrDbtd1xd05AeK75a2m11RLkEDQn8z3eJXCZAvOAdjDy','seller',NULL,'active',1,'2026-02-09 11:27:10','2026-02-09 11:27:10',NULL),(10,'gerente','gerente@gmail.com','$2y$10$M5SKeTSo1haICvs/lROL8e.aaZMjVW5DLqofrK/Q0ruXmkf9MHgne','manager',NULL,'active',1,'2026-02-09 11:29:54','2026-02-09 11:29:54',NULL);
+INSERT INTO `users` VALUES (8,'Administrador','admin@flreparos.com','$2y$10$PkZAF3XLBEpMjUd.ukDVDOnMOZ4nfWrhmnuggg5laolofTdgLBW2u','admin',NULL,'active',1,'2026-02-07 15:07:41','2026-02-07 15:07:41',NULL),(9,'testepermissao','testepermissao@gmail.com','$2y$10$dGFMn0l4IvrDbtd1xd05AeK75a2m11RLkEDQn8z3eJXCZAvOAdjDy','seller',NULL,'active',1,'2026-02-09 11:27:10','2026-02-09 11:27:10',NULL),(10,'gerente','gerente@gmail.com','$2y$10$M5SKeTSo1haICvs/lROL8e.aaZMjVW5DLqofrK/Q0ruXmkf9MHgne','manager',NULL,'active',1,'2026-02-09 11:29:54','2026-02-09 11:29:54',NULL),(11,'Vendedor1teste','vendedor1@gmail.com','$2y$10$Sp4s4jC5/Z78cFsvLG5mVeKnipoRKVo8KFpeVQJ92gR/ZQbVzwj4q','seller','{\"pdv\":[\"view\",\"create\",\"edit\",\"delete\"],\"service_orders\":[\"view\",\"create\"],\"products\":[\"view\",\"create\"],\"customers\":[\"view\",\"create\",\"edit\"]}','active',1,'2026-02-17 17:22:49','2026-02-17 17:26:05',NULL);
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -578,4 +578,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-11 20:36:35
+-- Dump completed on 2026-02-17 15:29:08

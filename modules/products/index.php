@@ -384,7 +384,6 @@ $products = $stmt->fetchAll();
 // Buscar categorias
 $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY name")->fetchAll();
 
-include '../../includes/header.php';
 ?>
 
 <!DOCTYPE html>

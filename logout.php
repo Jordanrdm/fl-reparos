@@ -5,6 +5,7 @@
  */
 
 include_once 'config/app.php';
+include_once 'config/database.php';
 
 // Registrar logout no log (opcional)
 if (isLoggedIn()) {
@@ -20,7 +21,6 @@ if (isLoggedIn()) {
 }
 
 // Destruir sessão
-session_start();
 session_destroy();
 
 // Limpar cookies se houver
