@@ -39,19 +39,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
         $primaryInstallments = !empty($paymentMethodsArr) ? ($paymentMethodsArr[0]['installments'] ?? 1) : 1;
 
         $stmt = $conn->prepare("INSERT INTO service_orders
-            (customer_id, user_id, device, device_type, status, total_cost, payment_method, payment_methods, installments, change_amount, deposit_amount, entry_datetime,
+            (customer_id, user_id, device, device_type, status, total_cost, discount, payment_method, payment_methods, installments, change_amount, deposit_amount, entry_datetime,
              technical_report, reported_problem, customer_observations, internal_observations,
              device_powers_on, device_password, password_pattern,
              checklist_lens, checklist_lens_condition, checklist_back_cover, checklist_screen,
              checklist_connector, checklist_camera_front_back, checklist_face_id, checklist_sim_card,
              technician_name, attendant_name, warranty_period, image)
-            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $_POST['customer_id'],
             $_SESSION['user_id'],
             $_POST['device'],
             $_POST['device_type'] ?? 'celular',
             $_POST['total_cost'] ?? 0,
+            $_POST['discount'] ?? 0,
             $primaryMethod,
             $paymentMethodsJson,
             $primaryInstallments,
@@ -167,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
         $primaryInstallments = !empty($paymentMethodsArr) ? ($paymentMethodsArr[0]['installments'] ?? 1) : 1;
 
         $stmt = $conn->prepare("UPDATE service_orders
-            SET customer_id=?, device=?, device_type=?, status=?, total_cost=?, payment_method=?, payment_methods=?, installments=?, change_amount=?, deposit_amount=?,
+            SET customer_id=?, device=?, device_type=?, status=?, total_cost=?, discount=?, payment_method=?, payment_methods=?, installments=?, change_amount=?, deposit_amount=?,
                 technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
                 device_powers_on=?, device_password=?, password_pattern=?,
                 checklist_lens=?, checklist_lens_condition=?, checklist_back_cover=?, checklist_screen=?,
@@ -180,6 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['device_type'] ?? 'celular',
             $_POST['status'],
             $_POST['total_cost'] ?? 0,
+            $_POST['discount'] ?? 0,
             $primaryMethod,
             $paymentMethodsJson,
             $primaryInstallments,
@@ -915,9 +917,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
         <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="action" value="add">
 
-            <!-- Dados Básicos -->
+            <!-- 1. CLIENTE E APARELHO -->
             <h3 style="margin:20px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-info-circle"></i> Dados Básicos
+                <i class="fas fa-user"></i> Cliente e Aparelho
             </h3>
             <div class="form-row">
                 <div class="form-group">
@@ -928,6 +930,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <div id="createCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
+            </div>
+            <div class="form-row">
                 <div class="form-group">
                     <label>Tipo de Produto</label>
                     <select name="device_type" class="form-control">
@@ -939,14 +943,101 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Modelo do Aparelho *</label>
+                    <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro">
+                </div>
             </div>
 
-            <!-- Produtos e Serviços -->
+            <!-- 2. DIAGNÓSTICO -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-stethoscope"></i> Diagnóstico
+            </h3>
+            <div class="form-group">
+                <label>Problema Relatado</label>
+                <textarea name="reported_problem" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>O Aparelho Liga?</label>
+                    <select name="device_powers_on" class="form-control">
+                        <option value="sim">Sim</option>
+                        <option value="nao">Não</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Senha do Aparelho</label>
+                    <input type="text" name="device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Senha Desenho (Padrão)</label>
+                <div class="pattern-lock-container">
+                    <div class="pattern-grid-input" id="createPatternGrid">
+                        <?php for($i=1;$i<=9;$i++): ?>
+                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
+                        <?php endfor; ?>
+                    </div>
+                    <input type="hidden" name="password_pattern" id="createPasswordPattern">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
+                <input type="file" name="os_image" class="form-control" accept="image/*">
+                <small style="color:#888;">Foto para registro interno, não será impressa</small>
+            </div>
+            <div class="form-group">
+                <label>Laudo Técnico</label>
+                <textarea name="technical_report" class="form-control" rows="3"></textarea>
+            </div>
+
+            <!-- 3. CHECKLIST -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
+            </h3>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_lens" value="1"> Lente
+                </label>
+                <div class="form-group" style="margin:0;">
+                    <select name="checklist_lens_condition" class="form-control">
+                        <option value="">Condição da lente</option>
+                        <option value="sem">Sem lente</option>
+                        <option value="arranhada">Arranhada</option>
+                        <option value="trincada">Trincada</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_screen" value="1"> Tela Trincada
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_sim_card" value="1"> Chip
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_connector" value="1"> Conector
+                </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <select name="checklist_camera_front_back" class="form-control">
+                        <option value="">Câmera</option>
+                        <option value="frontal">Frontal</option>
+                        <option value="traseira">Traseira</option>
+                        <option value="ambas">Ambas</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 4. PRODUTOS E SERVIÇOS -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
                 <i class="fas fa-box"></i> Produtos e Serviços
             </h3>
             <div id="create_products_section">
-                <!-- Adicionar Produto -->
                 <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:10px;">
                     <strong style="color:#667eea;font-size:13px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
                     <div class="form-row" style="margin-top:8px;">
@@ -974,8 +1065,6 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>
                     </div>
                 </div>
-
-                <!-- Adicionar Serviço -->
                 <div style="background:#f0fff0;padding:15px;border-radius:8px;margin-bottom:10px;">
                     <strong style="color:#4CAF50;font-size:13px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
                     <div class="form-row" style="margin-top:8px;">
@@ -1002,35 +1091,20 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>
                     </div>
                 </div>
-
                 <div id="create_products_list"></div>
                 <input type="hidden" id="create_products_data" name="products_data" value="[]">
             </div>
 
             <script>
-            // Array de produtos disponíveis
             const availableProducts = <?= json_encode($products) ?>;
 
             function searchProducts(mode) {
                 const searchInput = document.getElementById(mode + '_product_search');
                 const resultsDiv = document.getElementById(mode + '_product_results');
                 const searchTerm = searchInput.value.toLowerCase().trim();
-
-                if (searchTerm.length < 2) {
-                    resultsDiv.style.display = 'none';
-                    return;
-                }
-
-                const filteredProducts = availableProducts.filter(p =>
-                    (p.type || 'product') === 'product' && p.name.toLowerCase().includes(searchTerm)
-                );
-
-                if (filteredProducts.length === 0) {
-                    resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum produto encontrado</div>';
-                    resultsDiv.style.display = 'block';
-                    return;
-                }
-
+                if (searchTerm.length < 2) { resultsDiv.style.display = 'none'; return; }
+                const filteredProducts = availableProducts.filter(p => (p.type || 'product') === 'product' && p.name.toLowerCase().includes(searchTerm));
+                if (filteredProducts.length === 0) { resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum produto encontrado</div>'; resultsDiv.style.display = 'block'; return; }
                 let html = '';
                 filteredProducts.forEach(p => {
                     const outOfStock = parseInt(p.stock_quantity) <= 0;
@@ -1042,15 +1116,13 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>`;
                     } else {
                         html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
-                                      onmouseover="this.style.background='#f8f9ff'"
-                                      onmouseout="this.style.background='white'"
+                                      onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background='white'"
                                       onclick="selectProduct('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.price}, ${p.stock_quantity}, ${p.allow_price_edit || 0})">
                             <strong>${p.name}</strong><br>
                             <small style="color:#666;">R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')} - Estoque: ${p.stock_quantity}</small>
                         </div>`;
                     }
                 });
-
                 resultsDiv.innerHTML = html;
                 resultsDiv.style.display = 'block';
             }
@@ -1059,35 +1131,20 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 const searchInput = document.getElementById(mode + '_service_search');
                 const resultsDiv = document.getElementById(mode + '_service_results');
                 const searchTerm = searchInput.value.toLowerCase().trim();
-
-                if (searchTerm.length < 2) {
-                    resultsDiv.style.display = 'none';
-                    return;
-                }
-
-                const filteredServices = availableProducts.filter(p =>
-                    (p.type || 'product') === 'service' && p.name.toLowerCase().includes(searchTerm)
-                );
-
-                if (filteredServices.length === 0) {
-                    resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum serviço encontrado</div>';
-                    resultsDiv.style.display = 'block';
-                    return;
-                }
-
+                if (searchTerm.length < 2) { resultsDiv.style.display = 'none'; return; }
+                const filteredServices = availableProducts.filter(p => (p.type || 'product') === 'service' && p.name.toLowerCase().includes(searchTerm));
+                if (filteredServices.length === 0) { resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum serviço encontrado</div>'; resultsDiv.style.display = 'block'; return; }
                 let html = '';
                 filteredServices.forEach(p => {
                     const priceVal = p.price ? parseFloat(p.price) : null;
                     const priceText = priceVal ? 'R$ ' + priceVal.toFixed(2).replace('.', ',') : 'Preço a definir';
                     html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;"
-                                  onmouseover="this.style.background='#f0fff0'"
-                                  onmouseout="this.style.background='white'"
+                                  onmouseover="this.style.background='#f0fff0'" onmouseout="this.style.background='white'"
                                   onclick="selectService('${mode}', ${p.id}, '${p.name.replace(/'/g, "\\'")}', ${priceVal || 'null'}, ${p.allow_price_edit || 0})">
                         <strong><i class="fas fa-tools" style="color:#4CAF50;"></i> ${p.name}</strong><br>
                         <small style="color:#666;">${priceText}</small>
                     </div>`;
                 });
-
                 resultsDiv.innerHTML = html;
                 resultsDiv.style.display = 'block';
             }
@@ -1099,15 +1156,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 document.getElementById(mode + '_product_price_input').value = parseFloat(price).toFixed(2);
                 document.getElementById(mode + '_selected_product_stock').value = stock;
                 document.getElementById(mode + '_product_results').style.display = 'none';
-
                 const priceInput = document.getElementById(mode + '_product_price_input');
-                if (parseInt(allowPriceEdit) === 1) {
-                    priceInput.readOnly = false;
-                    priceInput.style.background = '';
-                } else {
-                    priceInput.readOnly = true;
-                    priceInput.style.background = '#e9ecef';
-                }
+                if (parseInt(allowPriceEdit) === 1) { priceInput.readOnly = false; priceInput.style.background = ''; }
+                else { priceInput.readOnly = true; priceInput.style.background = '#e9ecef'; }
             }
 
             function selectService(mode, id, name, price, allowPriceEdit) {
@@ -1116,57 +1167,64 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 document.getElementById(mode + '_selected_service_name').value = name;
                 document.getElementById(mode + '_service_price').value = price ? parseFloat(price).toFixed(2) : '';
                 document.getElementById(mode + '_service_results').style.display = 'none';
-
                 const priceInput = document.getElementById(mode + '_service_price');
-                if (parseInt(allowPriceEdit) === 1) {
-                    priceInput.readOnly = false;
-                    priceInput.style.background = '';
-                } else {
-                    priceInput.readOnly = true;
-                    priceInput.style.background = '#e9ecef';
-                }
+                if (parseInt(allowPriceEdit) === 1) { priceInput.readOnly = false; priceInput.style.background = ''; }
+                else { priceInput.readOnly = true; priceInput.style.background = '#e9ecef'; }
             }
 
-            // Fechar dropdown ao clicar fora
             document.addEventListener('click', function(e) {
                 ['create', 'edit'].forEach(function(mode) {
                     var prodResults = document.getElementById(mode + '_product_results');
                     var servResults = document.getElementById(mode + '_service_results');
-
-                    if (!e.target.closest('#' + mode + '_product_search') && !e.target.closest('#' + mode + '_product_results')) {
-                        if (prodResults) prodResults.style.display = 'none';
-                    }
-                    if (!e.target.closest('#' + mode + '_service_search') && !e.target.closest('#' + mode + '_service_results')) {
-                        if (servResults) servResults.style.display = 'none';
-                    }
+                    if (!e.target.closest('#' + mode + '_product_search') && !e.target.closest('#' + mode + '_product_results')) { if (prodResults) prodResults.style.display = 'none'; }
+                    if (!e.target.closest('#' + mode + '_service_search') && !e.target.closest('#' + mode + '_service_results')) { if (servResults) servResults.style.display = 'none'; }
                 });
             });
             </script>
 
-            <!-- Aparelho e Pagamento -->
+            <!-- 5. RESPONSÁVEIS -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-mobile-alt"></i> Aparelho e Pagamento
+                <i class="fas fa-users"></i> Responsáveis
             </h3>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Modelo do Aparelho *</label>
-                    <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro">
+                    <label>Técnico Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
+                        <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Atendente Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
+                        <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
             </div>
+
+            <!-- 6. PAGAMENTO -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-dollar-sign"></i> Pagamento
+            </h3>
 
             <!-- Resumo Financeiro -->
             <div id="create_financial_summary" style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-                    <div style="text-align:center;flex:1;min-width:120px;">
+                    <div style="text-align:center;flex:1;min-width:100px;">
                         <small style="color:#667eea;font-weight:bold;">Produtos</small>
                         <div id="create_total_products_display" style="font-size:16px;font-weight:bold;color:#667eea;">R$ 0,00</div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
+                    <div style="text-align:center;flex:1;min-width:100px;">
                         <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
                         <div id="create_total_services_display" style="font-size:16px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#333;font-weight:bold;">Total Geral</small>
+                    <div style="text-align:center;flex:1;min-width:100px;">
+                        <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
+                        <div id="create_discount_display" style="font-size:16px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
+                    </div>
+                    <div style="text-align:center;flex:1;min-width:100px;">
+                        <small style="color:#333;font-weight:bold;">Total Final</small>
                         <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
                             <span style="color:#333;font-weight:bold;">R$</span>
                             <input type="number" step="0.01" name="total_cost" id="create_total_cost" class="form-control" style="width:110px;font-size:16px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('create')">
@@ -1185,6 +1243,21 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div style="text-align:center;flex:1;min-width:120px;">
                         <small style="color:#f44336;font-weight:bold;">Restante</small>
                         <div id="create_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desconto -->
+            <div style="background:#ffeef0;padding:15px;border-radius:8px;margin-bottom:10px;">
+                <strong style="color:#e74c3c;font-size:13px;"><i class="fas fa-percentage"></i> Desconto</strong>
+                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
+                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
+                        <label style="font-size:12px;">Valor (R$)</label>
+                        <input type="number" step="0.01" name="discount" id="create_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('create')">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
+                        <label style="font-size:12px;">ou Percentual (%)</label>
+                        <input type="number" step="0.1" id="create_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('create')">
                     </div>
                 </div>
             </div>
@@ -1235,95 +1308,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 </div>
             </div>
 
-            <!-- Diagnóstico -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-stethoscope"></i> Diagnóstico
-            </h3>
-            <div class="form-group">
-                <label>Problema Relatado</label>
-                <textarea name="reported_problem" class="form-control" rows="3"></textarea>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>O Aparelho Liga?</label>
-                    <select name="device_powers_on" class="form-control">
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Senha do Aparelho</label>
-                    <input type="text" name="device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
-                </div>
-            </div>
-            <!-- Senha Desenho (Pattern Lock) -->
-            <div class="form-group">
-                <label>Senha Desenho (Padrão)</label>
-                <div class="pattern-lock-container">
-                    <div class="pattern-grid-input" id="createPatternGrid">
-                        <?php for($i=1;$i<=9;$i++): ?>
-                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
-                        <?php endfor; ?>
-                    </div>
-                    <input type="hidden" name="password_pattern" id="createPasswordPattern">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
-                </div>
-            </div>
-
-            <!-- Foto do aparelho -->
-            <div class="form-group">
-                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                <input type="file" name="os_image" class="form-control" accept="image/*">
-                <small style="color:#888;">Foto para registro interno, não será impressa</small>
-            </div>
-
-            <div class="form-group">
-                <label>Laudo Técnico</label>
-                <textarea name="technical_report" class="form-control" rows="3"></textarea>
-            </div>
-
-            <!-- Checklist -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
-            </h3>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_lens" value="1"> Lente
-                </label>
-                <div class="form-group" style="margin:0;">
-                    <select name="checklist_lens_condition" class="form-control">
-                        <option value="">Condição da lente</option>
-                        <option value="sem">Sem lente</option>
-                        <option value="arranhada">Arranhada</option>
-                        <option value="trincada">Trincada</option>
-                    </select>
-                </div>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen" value="1"> Tela Trincada
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_sim_card" value="1"> Chip
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_connector" value="1"> Conector
-                </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <select name="checklist_camera_front_back" class="form-control">
-                        <option value="">Câmera</option>
-                        <option value="frontal">Frontal</option>
-                        <option value="traseira">Traseira</option>
-                        <option value="ambas">Ambas</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Observações -->
+            <!-- 7. OBSERVAÇÕES E GARANTIA -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
                 <i class="fas fa-comment-alt"></i> Observações
             </h3>
@@ -1337,28 +1322,6 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
             </div>
 
-            <!-- Responsáveis -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-users"></i> Responsáveis
-            </h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Técnico Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
-                        <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Atendente Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
-                        <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Garantia -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
                 <i class="fas fa-shield-alt"></i> Garantia
             </h3>
@@ -1377,10 +1340,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
                 <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button type="button"
-                            class="btn btn-secondary"
-                            onclick="window.open('../settings/warranty_config.php', '_blank')"
-                            style="white-space: nowrap;">
+                    <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space: nowrap;">
                         <i class="fas fa-cog"></i> Configurar Termos
                     </button>
                 </div>
@@ -1405,9 +1365,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
 
-            <!-- Dados Básicos -->
+            <!-- 1. CLIENTE E APARELHO -->
             <h3 style="margin:20px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-info-circle"></i> Dados Básicos
+                <i class="fas fa-user"></i> Cliente e Aparelho
             </h3>
             <div class="form-row">
                 <div class="form-group">
@@ -1418,6 +1378,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <div id="editCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
+            </div>
+            <div class="form-row">
                 <div class="form-group">
                     <label>Tipo de Produto</label>
                     <select name="device_type" id="edit_device_type" class="form-control">
@@ -1429,14 +1391,106 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Modelo do Aparelho *</label>
+                    <input type="text" name="device" id="edit_device" class="form-control" required>
+                </div>
             </div>
 
-            <!-- Produtos e Serviços -->
+            <!-- 2. DIAGNÓSTICO -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-stethoscope"></i> Diagnóstico
+            </h3>
+            <div class="form-group">
+                <label>Problema Relatado</label>
+                <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>O Aparelho Liga?</label>
+                    <select name="device_powers_on" id="edit_device_powers_on" class="form-control">
+                        <option value="sim">Sim</option>
+                        <option value="nao">Não</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Senha do Aparelho</label>
+                    <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Senha Desenho (Padrão)</label>
+                <div class="pattern-lock-container">
+                    <div class="pattern-grid-input" id="editPatternGrid">
+                        <?php for($i=1;$i<=9;$i++): ?>
+                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
+                        <?php endfor; ?>
+                    </div>
+                    <input type="hidden" name="password_pattern" id="editPasswordPattern">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
+                <div id="edit_os_image_preview" style="display:none;margin-bottom:8px;">
+                    <img id="edit_os_image_thumb" src="" style="max-width:120px;max-height:120px;border-radius:8px;border:2px solid #ddd;">
+                    <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-left:8px;"><i class="fas fa-trash"></i> Remover</button>
+                    <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
+                </div>
+                <input type="file" name="os_image" class="form-control" accept="image/*">
+                <small style="color:#888;">Foto para registro interno, não será impressa</small>
+            </div>
+            <div class="form-group">
+                <label>Laudo Técnico</label>
+                <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="3"></textarea>
+            </div>
+
+            <!-- 3. CHECKLIST -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
+            </h3>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente
+                </label>
+                <div class="form-group" style="margin:0;">
+                    <select name="checklist_lens_condition" id="edit_checklist_lens_condition" class="form-control">
+                        <option value="">Condição da lente</option>
+                        <option value="sem">Sem lente</option>
+                        <option value="arranhada">Arranhada</option>
+                        <option value="trincada">Trincada</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector
+                </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <select name="checklist_camera_front_back" id="edit_checklist_camera_front_back" class="form-control">
+                        <option value="">Câmera</option>
+                        <option value="frontal">Frontal</option>
+                        <option value="traseira">Traseira</option>
+                        <option value="ambas">Ambas</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 4. PRODUTOS E SERVIÇOS -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
                 <i class="fas fa-box"></i> Produtos e Serviços
             </h3>
             <div id="edit_products_section">
-                <!-- Adicionar Produto -->
                 <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:10px;">
                     <strong style="color:#667eea;font-size:13px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
                     <div class="form-row" style="margin-top:8px;">
@@ -1464,8 +1518,6 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>
                     </div>
                 </div>
-
-                <!-- Adicionar Serviço -->
                 <div style="background:#f0fff0;padding:15px;border-radius:8px;margin-bottom:10px;">
                     <strong style="color:#4CAF50;font-size:13px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
                     <div class="form-row" style="margin-top:8px;">
@@ -1492,46 +1544,53 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>
                     </div>
                 </div>
-
                 <div id="edit_products_list"></div>
                 <input type="hidden" id="edit_products_data" name="products_data" value="[]">
             </div>
 
-            <!-- Aparelho e Pagamento -->
+            <!-- 5. RESPONSÁVEIS -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-mobile-alt"></i> Aparelho e Pagamento
+                <i class="fas fa-users"></i> Responsáveis
             </h3>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Modelo do Aparelho *</label>
-                    <input type="text" name="device" id="edit_device" class="form-control" required>
+                    <label>Técnico Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
+                        <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label>Status *</label>
-                    <select name="status" id="edit_status" class="form-control" required>
-                        <option value="open">Aguardando</option>
-                        <option value="in_progress">Em Andamento</option>
-                        <option value="completed">Concluído</option>
-                        <option value="invoiced">Faturada</option>
-                        <option value="delivered">Entregue</option>
-                        <option value="cancelled">Cancelado</option>
-                    </select>
+                    <label>Atendente Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
+                        <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
             </div>
+
+            <!-- 6. PAGAMENTO -->
+            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+                <i class="fas fa-dollar-sign"></i> Pagamento
+            </h3>
 
             <!-- Resumo Financeiro -->
             <div id="edit_financial_summary" style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-                    <div style="text-align:center;flex:1;min-width:120px;">
+                    <div style="text-align:center;flex:1;min-width:100px;">
                         <small style="color:#667eea;font-weight:bold;">Produtos</small>
                         <div id="edit_total_products_display" style="font-size:16px;font-weight:bold;color:#667eea;">R$ 0,00</div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
+                    <div style="text-align:center;flex:1;min-width:100px;">
                         <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
                         <div id="edit_total_services_display" style="font-size:16px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#333;font-weight:bold;">Total Geral</small>
+                    <div style="text-align:center;flex:1;min-width:100px;">
+                        <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
+                        <div id="edit_discount_display" style="font-size:16px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
+                    </div>
+                    <div style="text-align:center;flex:1;min-width:100px;">
+                        <small style="color:#333;font-weight:bold;">Total Final</small>
                         <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
                             <span style="color:#333;font-weight:bold;">R$</span>
                             <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control" style="width:110px;font-size:16px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('edit')">
@@ -1550,6 +1609,21 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div style="text-align:center;flex:1;min-width:120px;">
                         <small style="color:#f44336;font-weight:bold;">Restante</small>
                         <div id="edit_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desconto -->
+            <div style="background:#ffeef0;padding:15px;border-radius:8px;margin-bottom:10px;">
+                <strong style="color:#e74c3c;font-size:13px;"><i class="fas fa-percentage"></i> Desconto</strong>
+                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
+                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
+                        <label style="font-size:12px;">Valor (R$)</label>
+                        <input type="number" step="0.01" name="discount" id="edit_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('edit')">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
+                        <label style="font-size:12px;">ou Percentual (%)</label>
+                        <input type="number" step="0.1" id="edit_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('edit')">
                     </div>
                 </div>
             </div>
@@ -1600,100 +1674,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 </div>
             </div>
 
-            <!-- Diagnóstico -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-stethoscope"></i> Diagnóstico
-            </h3>
-            <div class="form-group">
-                <label>Problema Relatado</label>
-                <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="3"></textarea>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>O Aparelho Liga?</label>
-                    <select name="device_powers_on" id="edit_device_powers_on" class="form-control">
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Senha do Aparelho</label>
-                    <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
-                </div>
-            </div>
-            <!-- Senha Desenho (Pattern Lock) -->
-            <div class="form-group">
-                <label>Senha Desenho (Padrão)</label>
-                <div class="pattern-lock-container">
-                    <div class="pattern-grid-input" id="editPatternGrid">
-                        <?php for($i=1;$i<=9;$i++): ?>
-                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
-                        <?php endfor; ?>
-                    </div>
-                    <input type="hidden" name="password_pattern" id="editPasswordPattern">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
-                </div>
-            </div>
-
-            <!-- Foto do aparelho -->
-            <div class="form-group">
-                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                <div id="edit_os_image_preview" style="display:none;margin-bottom:8px;">
-                    <img id="edit_os_image_thumb" src="" style="max-width:120px;max-height:120px;border-radius:8px;border:2px solid #ddd;">
-                    <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-left:8px;"><i class="fas fa-trash"></i> Remover</button>
-                    <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
-                </div>
-                <input type="file" name="os_image" class="form-control" accept="image/*">
-                <small style="color:#888;">Foto para registro interno, não será impressa</small>
-            </div>
-
-            <div class="form-group">
-                <label>Laudo Técnico</label>
-                <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="3"></textarea>
-            </div>
-
-            <!-- Checklist -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
-            </h3>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente
-                </label>
-                <div class="form-group" style="margin:0;">
-                    <select name="checklist_lens_condition" id="edit_checklist_lens_condition" class="form-control">
-                        <option value="">Condição da lente</option>
-                        <option value="sem">Sem lente</option>
-                        <option value="arranhada">Arranhada</option>
-                        <option value="trincada">Trincada</option>
-                    </select>
-                </div>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector
-                </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <select name="checklist_camera_front_back" id="edit_checklist_camera_front_back" class="form-control">
-                        <option value="">Câmera</option>
-                        <option value="frontal">Frontal</option>
-                        <option value="traseira">Traseira</option>
-                        <option value="ambas">Ambas</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Observações -->
+            <!-- 7. OBSERVAÇÕES, GARANTIA E STATUS -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
                 <i class="fas fa-comment-alt"></i> Observações
             </h3>
@@ -1707,30 +1688,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
             </div>
 
-            <!-- Responsáveis -->
             <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-users"></i> Responsáveis
-            </h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Técnico Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
-                        <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Atendente Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
-                        <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Garantia -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
-                <i class="fas fa-shield-alt"></i> Garantia
+                <i class="fas fa-shield-alt"></i> Garantia e Status
             </h3>
             <div class="form-row">
                 <div class="form-group" style="flex: 1;">
@@ -1746,11 +1705,19 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="Sem garantia">Sem garantia</option>
                     </select>
                 </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Status *</label>
+                    <select name="status" id="edit_status" class="form-control" required>
+                        <option value="open">Aguardando</option>
+                        <option value="in_progress">Em Andamento</option>
+                        <option value="completed">Concluído</option>
+                        <option value="invoiced">Faturada</option>
+                        <option value="delivered">Entregue</option>
+                        <option value="cancelled">Cancelado</option>
+                    </select>
+                </div>
                 <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button type="button"
-                            class="btn btn-secondary"
-                            onclick="window.open('../settings/warranty_config.php', '_blank')"
-                            style="white-space: nowrap;">
+                    <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space: nowrap;">
                         <i class="fas fa-cog"></i> Configurar Termos
                     </button>
                 </div>
@@ -2011,7 +1978,12 @@ function updateItemsList(mode) {
 
     listDiv.innerHTML = html;
     dataInput.value = JSON.stringify(items);
-    totalInput.value = total.toFixed(2);
+
+    // Aplicar desconto ao total
+    const discount = parseFloat(document.getElementById(mode + '_discount').value) || 0;
+    const totalWithDiscount = Math.max(0, total - discount);
+    totalInput.value = totalWithDiscount.toFixed(2);
+
     updateFinancialBalance(mode);
 }
 
@@ -2123,6 +2095,41 @@ function renderPayments(mode) {
     document.getElementById(mode + '_payment_methods_data').value = JSON.stringify(payments);
 }
 
+function applyDiscount(mode) {
+    const items = mode === 'create' ? createItems : editItems;
+    let subtotal = 0;
+    items.forEach(item => { subtotal += item.subtotal; });
+
+    const discount = parseFloat(document.getElementById(mode + '_discount').value) || 0;
+    const totalFinal = Math.max(0, subtotal - discount);
+    document.getElementById(mode + '_total_cost').value = totalFinal.toFixed(2);
+
+    // Atualizar percentual correspondente
+    const percentInput = document.getElementById(mode + '_discount_percent');
+    if (subtotal > 0 && discount > 0) {
+        percentInput.value = ((discount / subtotal) * 100).toFixed(1);
+    } else {
+        percentInput.value = '';
+    }
+
+    updateFinancialBalance(mode);
+}
+
+function applyDiscountPercent(mode) {
+    const items = mode === 'create' ? createItems : editItems;
+    let subtotal = 0;
+    items.forEach(item => { subtotal += item.subtotal; });
+
+    const percent = parseFloat(document.getElementById(mode + '_discount_percent').value) || 0;
+    const discount = (subtotal * percent) / 100;
+    document.getElementById(mode + '_discount').value = discount.toFixed(2);
+
+    const totalFinal = Math.max(0, subtotal - discount);
+    document.getElementById(mode + '_total_cost').value = totalFinal.toFixed(2);
+
+    updateFinancialBalance(mode);
+}
+
 function updateFinancialBalance(mode) {
     const items = mode === 'create' ? createItems : editItems;
     const payments = mode === 'create' ? createPayments : editPayments;
@@ -2133,6 +2140,9 @@ function updateFinancialBalance(mode) {
         if (item.type === 'product') totalProducts += item.subtotal;
         else totalServices += item.subtotal;
     });
+
+    // Desconto
+    const discount = parseFloat(document.getElementById(mode + '_discount').value) || 0;
 
     // Total geral (editável)
     const totalGeral = parseFloat(document.getElementById(mode + '_total_cost').value) || 0;
@@ -2151,6 +2161,7 @@ function updateFinancialBalance(mode) {
     const fmt = (v) => 'R$ ' + v.toFixed(2).replace('.', ',');
     document.getElementById(mode + '_total_products_display').textContent = fmt(totalProducts);
     document.getElementById(mode + '_total_services_display').textContent = fmt(totalServices);
+    document.getElementById(mode + '_discount_display').textContent = '- ' + fmt(discount);
     document.getElementById(mode + '_deposit_display').textContent = fmt(deposit);
     document.getElementById(mode + '_payments_total_display').textContent = fmt(totalPayments);
 
@@ -2174,6 +2185,8 @@ function openEditModal(o){
     document.getElementById('edit_device_type').value=o.device_type||'celular';
     document.getElementById('edit_status').value=o.status||'open';
     document.getElementById('edit_total_cost').value=o.total_cost||0;
+    document.getElementById('edit_discount').value=o.discount||0;
+    document.getElementById('edit_discount_percent').value='';
     document.getElementById('edit_deposit_amount').value=o.deposit_amount||0;
 
     // Formas de pagamento (múltiplas)
