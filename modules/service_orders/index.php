@@ -621,7 +621,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     width:35px;height:35px;cursor:pointer;font-size:18px;transition:all .3s;
 }
 .close:hover {transform:rotate(90deg);background:#d32f2f;}
-.form-row {display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap;}
+.form-row {display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;}
 .form-group {flex:1;min-width:200px;}
 .form-group label {display:block;margin-bottom:5px;font-weight:600;color:#333;}
 .form-control {
@@ -909,7 +909,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
 
 <!-- MODAL NOVA OS -->
 <div id="createModal" class="modal">
-    <div class="modal-content" style="max-width:900px;">
+    <div class="modal-content" style="max-width:95vw;width:1300px;">
         <div class="modal-header">
             <h2><i class="fas fa-plus-circle"></i> Nova Ordem de Serviço</h2>
             <button class="close" onclick="closeModal('createModal')">&times;</button>
@@ -918,11 +918,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <input type="hidden" name="action" value="add">
 
             <!-- 1. CLIENTE E APARELHO -->
-            <h3 style="margin:20px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:10px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-user"></i> Cliente e Aparelho
             </h3>
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:2;">
                     <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
                         <input type="text" id="createCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
@@ -930,9 +930,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <div id="createCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label>Tipo de Produto</label>
                     <select name="device_type" class="form-control">
                         <option value="celular">Celular</option>
@@ -943,19 +941,19 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:1.5;">
                     <label>Modelo do Aparelho *</label>
                     <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro">
                 </div>
             </div>
 
             <!-- 2. DIAGNÓSTICO -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-stethoscope"></i> Diagnóstico
             </h3>
             <div class="form-group">
                 <label>Problema Relatado</label>
-                <textarea name="reported_problem" class="form-control" rows="3"></textarea>
+                <textarea name="reported_problem" class="form-control" rows="2"></textarea>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -970,33 +968,35 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <input type="text" name="device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
                 </div>
             </div>
-            <div class="form-group">
-                <label>Senha Desenho (Padrão)</label>
-                <div class="pattern-lock-container">
-                    <div class="pattern-grid-input" id="createPatternGrid">
-                        <?php for($i=1;$i<=9;$i++): ?>
-                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
-                        <?php endfor; ?>
+            <div class="form-row" style="align-items:flex-start;">
+                <div class="form-group" style="flex:1;">
+                    <label>Senha Desenho (Padrão)</label>
+                    <div class="pattern-lock-container">
+                        <div class="pattern-grid-input" id="createPatternGrid">
+                            <?php for($i=1;$i<=9;$i++): ?>
+                            <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
+                            <?php endfor; ?>
+                        </div>
+                        <input type="hidden" name="password_pattern" id="createPasswordPattern">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
                     </div>
-                    <input type="hidden" name="password_pattern" id="createPasswordPattern">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
+                    <input type="file" name="os_image" class="form-control" accept="image/*">
+                    <small style="color:#888;">Foto para registro interno, não será impressa</small>
                 </div>
             </div>
             <div class="form-group">
-                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                <input type="file" name="os_image" class="form-control" accept="image/*">
-                <small style="color:#888;">Foto para registro interno, não será impressa</small>
-            </div>
-            <div class="form-group">
                 <label>Laudo Técnico</label>
-                <textarea name="technical_report" class="form-control" rows="3"></textarea>
+                <textarea name="technical_report" class="form-control" rows="2"></textarea>
             </div>
 
             <!-- 3. CHECKLIST -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
             </h3>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_lens" value="1"> Lente
                 </label>
@@ -1008,22 +1008,22 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="trincada">Trincada</option>
                     </select>
                 </div>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_screen" value="1"> Tela Trincada
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_sim_card" value="1"> Chip
                 </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_connector" value="1"> Conector
                 </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                <div class="form-group" style="margin:0;grid-column:span 2;">
                     <select name="checklist_camera_front_back" class="form-control">
                         <option value="">Câmera</option>
                         <option value="frontal">Frontal</option>
@@ -1034,7 +1034,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 4. PRODUTOS E SERVIÇOS -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-box"></i> Produtos e Serviços
             </h3>
             <div id="create_products_section">
@@ -1183,7 +1183,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </script>
 
             <!-- 5. RESPONSÁVEIS -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-users"></i> Responsáveis
             </h3>
             <div class="form-row">
@@ -1204,7 +1204,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 6. PAGAMENTO -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-dollar-sign"></i> Pagamento
             </h3>
 
@@ -1309,20 +1309,22 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 7. OBSERVAÇÕES E GARANTIA -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-comment-alt"></i> Observações
             </h3>
-            <div class="form-group">
-                <label>Observações para o Cliente</label>
-                <textarea name="customer_observations" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Observações Internas</label>
-                <textarea name="internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
-                <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
+            <div class="form-row" style="align-items:flex-start;">
+                <div class="form-group">
+                    <label>Observações para o Cliente</label>
+                    <textarea name="customer_observations" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Observações Internas</label>
+                    <textarea name="internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
+                    <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
+                </div>
             </div>
 
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-shield-alt"></i> Garantia
             </h3>
             <div class="form-row">
@@ -1356,7 +1358,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
 
 <!-- MODAL EDITAR OS -->
 <div id="editModal" class="modal">
-    <div class="modal-content" style="max-width:900px;">
+    <div class="modal-content" style="max-width:95vw;width:1300px;">
         <div class="modal-header">
             <h2><i class="fas fa-edit"></i> Editar Ordem de Serviço</h2>
             <button class="close" onclick="closeModal('editModal')">&times;</button>
@@ -1366,11 +1368,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <input type="hidden" name="id" id="edit_id">
 
             <!-- 1. CLIENTE E APARELHO -->
-            <h3 style="margin:20px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:10px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-user"></i> Cliente e Aparelho
             </h3>
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:2;">
                     <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
                         <input type="text" id="editCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
@@ -1378,9 +1380,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <div id="editCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" style="flex:1;">
                     <label>Tipo de Produto</label>
                     <select name="device_type" id="edit_device_type" class="form-control">
                         <option value="celular">Celular</option>
@@ -1391,19 +1391,19 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="flex:1.5;">
                     <label>Modelo do Aparelho *</label>
                     <input type="text" name="device" id="edit_device" class="form-control" required>
                 </div>
             </div>
 
             <!-- 2. DIAGNÓSTICO -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-stethoscope"></i> Diagnóstico
             </h3>
             <div class="form-group">
                 <label>Problema Relatado</label>
-                <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="3"></textarea>
+                <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="2"></textarea>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -1418,38 +1418,40 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
                 </div>
             </div>
-            <div class="form-group">
-                <label>Senha Desenho (Padrão)</label>
-                <div class="pattern-lock-container">
-                    <div class="pattern-grid-input" id="editPatternGrid">
-                        <?php for($i=1;$i<=9;$i++): ?>
-                        <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
-                        <?php endfor; ?>
+            <div class="form-row" style="align-items:flex-start;">
+                <div class="form-group" style="flex:1;">
+                    <label>Senha Desenho (Padrão)</label>
+                    <div class="pattern-lock-container">
+                        <div class="pattern-grid-input" id="editPatternGrid">
+                            <?php for($i=1;$i<=9;$i++): ?>
+                            <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
+                            <?php endfor; ?>
+                        </div>
+                        <input type="hidden" name="password_pattern" id="editPasswordPattern">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
                     </div>
-                    <input type="hidden" name="password_pattern" id="editPasswordPattern">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
                 </div>
-            </div>
-            <div class="form-group">
-                <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                <div id="edit_os_image_preview" style="display:none;margin-bottom:8px;">
-                    <img id="edit_os_image_thumb" src="" style="max-width:120px;max-height:120px;border-radius:8px;border:2px solid #ddd;">
-                    <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-left:8px;"><i class="fas fa-trash"></i> Remover</button>
-                    <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
+                <div class="form-group" style="flex:1;">
+                    <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
+                    <div id="edit_os_image_preview" style="display:none;margin-bottom:8px;">
+                        <img id="edit_os_image_thumb" src="" style="max-width:120px;max-height:120px;border-radius:8px;border:2px solid #ddd;">
+                        <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-left:8px;"><i class="fas fa-trash"></i> Remover</button>
+                        <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
+                    </div>
+                    <input type="file" name="os_image" class="form-control" accept="image/*">
+                    <small style="color:#888;">Foto para registro interno, não será impressa</small>
                 </div>
-                <input type="file" name="os_image" class="form-control" accept="image/*">
-                <small style="color:#888;">Foto para registro interno, não será impressa</small>
             </div>
             <div class="form-group">
                 <label>Laudo Técnico</label>
-                <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="3"></textarea>
+                <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="2"></textarea>
             </div>
 
             <!-- 3. CHECKLIST -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
             </h3>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente
                 </label>
@@ -1461,22 +1463,22 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="trincada">Trincada</option>
                     </select>
                 </div>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip
                 </label>
+                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
+                </div>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector
                 </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
+                <div class="form-group" style="margin:0;grid-column:span 2;">
                     <select name="checklist_camera_front_back" id="edit_checklist_camera_front_back" class="form-control">
                         <option value="">Câmera</option>
                         <option value="frontal">Frontal</option>
@@ -1487,7 +1489,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 4. PRODUTOS E SERVIÇOS -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-box"></i> Produtos e Serviços
             </h3>
             <div id="edit_products_section">
@@ -1549,7 +1551,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 5. RESPONSÁVEIS -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-users"></i> Responsáveis
             </h3>
             <div class="form-row">
@@ -1570,7 +1572,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 6. PAGAMENTO -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-dollar-sign"></i> Pagamento
             </h3>
 
@@ -1675,20 +1677,22 @@ tr:hover {background:rgba(103,58,183,0.1);}
             </div>
 
             <!-- 7. OBSERVAÇÕES, GARANTIA E STATUS -->
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-comment-alt"></i> Observações
             </h3>
-            <div class="form-group">
-                <label>Observações para o Cliente</label>
-                <textarea name="customer_observations" id="edit_customer_observations" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Observações Internas</label>
-                <textarea name="internal_observations" id="edit_internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
-                <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
+            <div class="form-row" style="align-items:flex-start;">
+                <div class="form-group">
+                    <label>Observações para o Cliente</label>
+                    <textarea name="customer_observations" id="edit_customer_observations" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Observações Internas</label>
+                    <textarea name="internal_observations" id="edit_internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
+                    <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
+                </div>
             </div>
 
-            <h3 style="margin:25px 0 15px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:10px;">
+            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
                 <i class="fas fa-shield-alt"></i> Garantia e Status
             </h3>
             <div class="form-row">

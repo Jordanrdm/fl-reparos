@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
     requirePermission('customers', 'create');
     try {
         $stmt = $conn->prepare("INSERT INTO customers
-            (name, cpf_cnpj, phone, email, address, city, state, zipcode, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+            (name, cpf_cnpj, phone, email, address, city, state, zipcode, notes, birth_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
         $stmt->execute([
             $_POST['name'],
             $_POST['cpf_cnpj'] ?? null,
@@ -33,7 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['city'] ?? null,
             $_POST['state'] ?? null,
             $_POST['zipcode'] ?? null,
-            $_POST['notes'] ?? null
+            $_POST['notes'] ?? null,
+            !empty($_POST['birth_date']) ? $_POST['birth_date'] : null
         ]);
         echo "<script>alert('Cliente cadastrado com sucesso!');window.location='index.php';</script>";
         exit;
@@ -47,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     requirePermission('customers', 'edit');
     try {
         $stmt = $conn->prepare("UPDATE customers
-            SET name=?, cpf_cnpj=?, phone=?, email=?, address=?, city=?, state=?, zipcode=?, notes=?, updated_at=NOW()
+            SET name=?, cpf_cnpj=?, phone=?, email=?, address=?, city=?, state=?, zipcode=?, notes=?, birth_date=?, updated_at=NOW()
             WHERE id=?");
         $stmt->execute([
             $_POST['name'],
@@ -59,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['state'] ?? null,
             $_POST['zipcode'] ?? null,
             $_POST['notes'] ?? null,
+            !empty($_POST['birth_date']) ? $_POST['birth_date'] : null,
             $_POST['id']
         ]);
         echo "<script>alert('Cliente atualizado com sucesso!');window.location='index.php';</script>";
@@ -564,6 +566,10 @@ textarea.form-control {
                     <label>Email</label>
                     <input type="email" name="email" class="form-control" placeholder="email@exemplo.com">
                 </div>
+                <div class="form-group">
+                    <label>Data de Nascimento</label>
+                    <input type="date" name="birth_date" class="form-control">
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:2;">
@@ -639,6 +645,10 @@ textarea.form-control {
                     <label>Email</label>
                     <input type="email" name="email" id="edit_email" class="form-control">
                 </div>
+                <div class="form-group">
+                    <label>Data de Nascimento</label>
+                    <input type="date" name="birth_date" id="edit_birth_date" class="form-control">
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:2;">
@@ -700,6 +710,7 @@ function openEditModal(o){
     document.getElementById('edit_state').value=o.state||'';
     document.getElementById('edit_zipcode').value=o.zipcode||'';
     document.getElementById('edit_notes').value=o.notes||'';
+    document.getElementById('edit_birth_date').value=o.birth_date||'';
     openModal('editModal');
 }
 
