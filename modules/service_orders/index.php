@@ -13,6 +13,14 @@ $conn = $database->getConnection();
 // Verificar permissão de visualização
 requirePermission('service_orders', 'view');
 
+// Endpoint AJAX: retorna lista de clientes atualizada
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_customers') {
+    header('Content-Type: application/json');
+    $stmt = $conn->query("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC");
+    echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    exit;
+}
+
 // =============================
 // 🔧 CRUD
 // =============================
@@ -1866,6 +1874,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Autocomplete de atendentes
     setupOsAutocomplete('createAttendantSearch', 'createAttendantSuggestions', osAttendants, {});
     setupOsAutocomplete('edit_attendant_name', 'editAttendantSuggestions', osAttendants, {});
+
+    // Ao voltar para esta aba, atualiza lista de clientes automaticamente
+    window.addEventListener('focus', function() {
+        fetch('?action=get_customers')
+            .then(r => r.json())
+            .then(data => {
+                osCustomers.length = 0;
+                data.forEach(c => osCustomers.push(c));
+                // Re-dispara busca se houver texto nos campos de cliente
+                ['createCustomerSearch', 'editCustomerSearch'].forEach(function(id) {
+                    const input = document.getElementById(id);
+                    if (input && input.value.trim().length > 0) {
+                        input.dispatchEvent(new Event('input'));
+                    }
+                });
+            })
+            .catch(function() {});
+    });
 });
 
 // Gerenciamento de itens na OS (produtos + serviços)
