@@ -168,6 +168,35 @@ function getFlashMessages() {
     return $messages;
 }
 
+/**
+ * Registra atividade no log do sistema
+ */
+function logActivity($action, $module, $record_id, $description, $old_values = null, $new_values = null) {
+    global $conn;
+    if (!isset($conn) || !$conn) return;
+    $user = getCurrentUser();
+    if (!$user) return;
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO activity_logs (user_id, user_name, action, module, record_id, description, old_values, new_values, ip_address)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->execute([
+            $user['id'],
+            $user['name'],
+            $action,
+            $module,
+            $record_id,
+            $description,
+            $old_values !== null ? json_encode($old_values, JSON_UNESCAPED_UNICODE) : null,
+            $new_values !== null ? json_encode($new_values, JSON_UNESCAPED_UNICODE) : null,
+            $_SERVER['REMOTE_ADDR'] ?? null
+        ]);
+    } catch (Exception $e) {
+        // Não quebrar o sistema se o log falhar
+    }
+}
+
 // Auto-include do banco de dados
 $dbFile = __DIR__ . '/database.php';
 if (file_exists($dbFile)) {

@@ -48,6 +48,16 @@ try {
     $stmt = $database->query("SELECT COUNT(*) as total_customers FROM customers");
     $totalCustomers = $stmt->fetch()['total_customers'];
 
+    // Status do caixa atual
+    $stmt = $database->query(
+        "SELECT id, status, opening_balance, opening_date, closing_date, closing_balance
+         FROM cash_register
+         WHERE user_id = ?
+         ORDER BY id DESC LIMIT 1",
+        [$_SESSION['user_id']]
+    );
+    $cashRegister = $stmt->fetch();
+
 } catch (Exception $e) {
     // Valores padrão em caso de erro
     $todaySales = 0;
@@ -83,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             header('Location: index.php?msg=sales_reset');
             exit;
         } catch (Exception $e) {
-            $errorMsg = 'Erro ao zerar vendas: ' . $e->getMessage();
+            $flashError = 'Erro ao zerar vendas: ' . $e->getMessage();
         }
     }
 
@@ -102,9 +112,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             header('Location: index.php?msg=cash_reset');
             exit;
         } catch (Exception $e) {
-            $errorMsg = 'Erro ao zerar caixa: ' . $e->getMessage();
+            $flashError = 'Erro ao zerar caixa: ' . $e->getMessage();
         }
     }
+}
+if (!empty($flashError)) {
+    echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('" . addslashes($flashError) . "','error'); });</script>";
 }
 
 $pageTitle = 'Dashboard';
@@ -138,12 +151,15 @@ include 'includes/header.php';
             <div class="stat-icon sales">
                 <i class="fas fa-chart-line"></i>
             </div>
-            <div class="stat-value"><?php echo formatMoney($todaySales); ?></div>
-            <div class="stat-label">Vendas Hoje</div>
+            <div class="stat-value" id="val-sales"><?php echo formatMoney($todaySales); ?></div>
+            <div class="stat-label" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+                Vendas Hoje
+                <button onclick="toggleValue('sales','<?php echo addslashes(formatMoney($todaySales)); ?>')" id="eye-sales" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
+            </div>
             <?php if(isAdmin() && $todaySales > 0): ?>
-                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return confirm('Tem certeza que deseja ZERAR todas as vendas de hoje?\nEssa ação não pode ser desfeita!');">
+                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return false;" id="resetSalesForm">
                     <input type="hidden" name="action" value="reset_today_sales">
-                    <button type="submit" title="Zerar vendas de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
+                    <button type="button" title="Zerar vendas de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;" onclick="showConfirm('Tem certeza que deseja ZERAR todas as vendas de hoje? Essa ação não pode ser desfeita!','Zerar Vendas','Zerar','Cancelar','danger').then(ok=>{if(ok)document.getElementById(\'resetSalesForm\').submit();})">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </form>
@@ -154,12 +170,26 @@ include 'includes/header.php';
             <div class="stat-icon money">
                 <i class="fas fa-wallet"></i>
             </div>
-            <div class="stat-value"><?php echo formatMoney($currentCash); ?></div>
-            <div class="stat-label">Caixa Atual</div>
+            <div class="stat-value" id="val-cash"><?php echo formatMoney($currentCash); ?></div>
+            <div class="stat-label" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+                Caixa Atual
+                <button onclick="toggleValue('cash','<?php echo addslashes(formatMoney($currentCash)); ?>')" id="eye-cash" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
+            </div>
+            <?php
+            $caixaStatus = $cashRegister['status'] ?? null;
+            $caixaColor  = $caixaStatus === 'open'  ? '#00b894' : ($caixaStatus === 'closed' ? '#e74c3c' : '#aaa');
+            $caixaLabel  = $caixaStatus === 'open'  ? 'Aberto'  : ($caixaStatus === 'closed' ? 'Fechado' : 'Sem caixa');
+            $caixaIcon   = $caixaStatus === 'open'  ? 'fa-lock-open' : 'fa-lock';
+            ?>
+            <div style="margin-top:6px;">
+                <span style="display:inline-flex;align-items:center;gap:5px;background:<?= $caixaColor ?>22;color:<?= $caixaColor ?>;border:1px solid <?= $caixaColor ?>55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">
+                    <i class="fas <?= $caixaIcon ?>"></i> <?= $caixaLabel ?>
+                </span>
+            </div>
             <?php if(isAdmin() && $currentCash != 0): ?>
-                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return confirm('Tem certeza que deseja ZERAR o caixa de hoje?\nEssa ação não pode ser desfeita!');">
+                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return false;" id="resetCashForm">
                     <input type="hidden" name="action" value="reset_today_cash">
-                    <button type="submit" title="Zerar caixa de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
+                    <button type="button" title="Zerar caixa de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;" onclick="showConfirm('Tem certeza que deseja ZERAR o caixa de hoje? Essa ação não pode ser desfeita!','Zerar Caixa','Zerar','Cancelar','danger').then(ok=>{if(ok)document.getElementById(\'resetCashForm\').submit();})">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </form>
@@ -278,6 +308,16 @@ include 'includes/header.php';
             <div class="module-description">Gerenciar usuários e permissões do sistema</div>
         </div>
         <?php endif; ?>
+
+        <?php if(isAdmin()): ?>
+        <div class="module-card" onclick="location.href='modules/logs/index.php'">
+            <div class="module-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+                <i class="fas fa-history"></i>
+            </div>
+            <div class="module-title">Logs de Atividade</div>
+            <div class="module-description">Histórico completo de alterações feitas no sistema</div>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -287,5 +327,59 @@ include 'includes/header.php';
         <i class="fas fa-plus"></i>
     </button>
 </div>
+
+<script>
+const _hidden = {};
+
+function toggleValue(key, realValue) {
+    const valEl = document.getElementById('val-' + key);
+    const eyeEl = document.getElementById('eye-' + key);
+    if (!valEl || !eyeEl) return;
+
+    _hidden[key] = !_hidden[key];
+
+    if (_hidden[key]) {
+        valEl.textContent = '••••••';
+        valEl.style.letterSpacing = '4px';
+        eyeEl.innerHTML = '<i class="fas fa-eye-slash"></i>';
+    } else {
+        valEl.textContent = realValue;
+        valEl.style.letterSpacing = '';
+        eyeEl.innerHTML = '<i class="fas fa-eye"></i>';
+    }
+
+    // Persistir preferência na sessão do browser
+    try { sessionStorage.setItem('fl_hide_' + key, _hidden[key] ? '1' : '0'); } catch(e) {}
+}
+
+// Restaurar estado ao carregar
+document.addEventListener('DOMContentLoaded', function() {
+    ['sales','cash'].forEach(function(key) {
+        try {
+            if (sessionStorage.getItem('fl_hide_' + key) === '1') {
+                const valEl = document.getElementById('val-' + key);
+                const eyeEl = document.getElementById('eye-' + key);
+                if (valEl && eyeEl) {
+                    _hidden[key] = true;
+                    valEl.textContent = '••••••';
+                    valEl.style.letterSpacing = '4px';
+                    eyeEl.innerHTML = '<i class="fas fa-eye-slash"></i>';
+                }
+            }
+        } catch(e) {}
+    });
+});
+
+document.addEventListener('keydown', function(e) {
+    // Ignorar se estiver digitando em input/textarea
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    switch (e.key) {
+        case 'F2': e.preventDefault(); location.href = 'modules/products/'; break;
+        case 'F3': e.preventDefault(); location.href = 'modules/pdv/'; break;
+        case 'F4': e.preventDefault(); location.href = 'modules/cashflow/index.php'; break;
+        case 'F5': e.preventDefault(); location.href = 'modules/service_orders/index.php'; break;
+    }
+});
+</script>
 
 <?php include 'includes/footer.php'; ?>

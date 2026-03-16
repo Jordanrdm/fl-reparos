@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once('../../config/database.php');
 require_once('../../config/permissions.php');
+require_once('../../config/app.php');
 
 // Apenas admin pode acessar
 requireAdmin();
@@ -25,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
         $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->execute([$_POST['email']]);
         if ($stmt->fetch()) {
-            echo "<script>alert('Este email já está cadastrado!');window.location='index.php';</script>";
+            echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Este email já está cadastrado!',type:'error'}));window.location='index.php';</script>";
             exit;
         }
 
@@ -39,19 +40,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['role'],
             $_POST['status'] ?? 'active'
         ]);
-        echo "<script>alert('Usuário cadastrado com sucesso!');window.location='index.php';</script>";
+        $newUserId = $conn->lastInsertId();
+        logActivity('create', 'users', $newUserId,
+            "Usuário '{$_POST['name']}' cadastrado — Email: {$_POST['email']}, Perfil: {$_POST['role']}"
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Usuário cadastrado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
 // Editar Usuário
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     try {
+        // Buscar dados atuais para o log
+        $oldUser = $conn->prepare("SELECT name, email, role, status FROM users WHERE id=?");
+        $oldUser->execute([$_POST['id']]);
+        $oldUserData = $oldUser->fetch(PDO::FETCH_ASSOC);
+
         // Não permitir alterar próprio perfil de admin para evitar lock-out
         if ($_POST['id'] == $_SESSION['user_id'] && $_POST['role'] !== 'admin') {
-            echo "<script>alert('Você não pode alterar seu próprio perfil de administrador!');window.location='index.php';</script>";
+            echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Você não pode alterar seu próprio perfil de administrador!',type:'error'}));window.location='index.php';</script>";
             exit;
         }
 
@@ -81,10 +91,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
                 $_POST['id']
             ]);
         }
-        echo "<script>alert('Usuário atualizado com sucesso!');window.location='index.php';</script>";
+        $passChanged = !empty($_POST['password']) ? ', senha alterada' : '';
+        logActivity('update', 'users', (int)$_POST['id'],
+            "Usuário '{$_POST['name']}' editado$passChanged",
+            $oldUserData ? ['nome' => $oldUserData['name'], 'email' => $oldUserData['email'], 'perfil' => $oldUserData['role'], 'status' => $oldUserData['status']] : null,
+            ['nome' => $_POST['name'], 'email' => $_POST['email'], 'perfil' => $_POST['role'], 'status' => $_POST['status']]
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Usuário atualizado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao atualizar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -95,20 +111,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
 
         // Não permitir deletar a si mesmo
         if ($id == $_SESSION['user_id']) {
-            echo "<script>alert('Você não pode deletar seu próprio usuário!');window.location='index.php';</script>";
+            echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Você não pode deletar seu próprio usuário!',type:'error'}));window.location='index.php';</script>";
             exit;
         }
+
+        // Buscar nome antes de excluir
+        $delUser = $conn->prepare("SELECT name, email, role FROM users WHERE id=?");
+        $delUser->execute([$id]);
+        $delUserData = $delUser->fetch(PDO::FETCH_ASSOC);
 
         // Soft delete: marca como deletado ao invés de remover do banco
         $stmt = $conn->prepare("UPDATE users SET deleted_at = NOW() WHERE id = ?");
         $stmt->execute([$id]);
 
-        echo "<script>alert('Usuário excluído com sucesso!');window.location='index.php';</script>";
+        logActivity('delete', 'users', $id,
+            "Usuário '{$delUserData['name']}' excluído — Email: {$delUserData['email']}, Perfil: {$delUserData['role']}"
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Usuário excluído com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
 
     } catch (PDOException $e) {
         $errorMsg = "Erro ao excluir usuário: " . htmlspecialchars($e->getMessage());
-        echo "<script>alert('" . addslashes($errorMsg) . "');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'" . addslashes($errorMsg) . "',type:'error'}));window.location='index.php';</script>";
         exit;
     }
 }
@@ -153,10 +177,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'save_permissi
         $stmt = $conn->prepare("UPDATE users SET permissions = ? WHERE id = ?");
         $stmt->execute([$permJson, $userId]);
 
-        echo "<script>alert('Permissões salvas com sucesso! O usuário precisa fazer login novamente para aplicar.');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Permissões salvas com sucesso! O usuário precisa fazer login novamente para aplicar.',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao salvar permissões: " . addslashes($e->getMessage()) . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao salvar permissões: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -166,12 +190,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'save_permissi
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_technician') {
     $stmt = $conn->prepare("INSERT INTO technicians (name, phone, specialty) VALUES (?, ?, ?)");
     $stmt->execute([$_POST['name'], $_POST['phone'] ?? null, $_POST['specialty'] ?? null]);
-    echo "<script>alert('Técnico cadastrado com sucesso!');window.location='index.php?tab=technicians';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Técnico cadastrado com sucesso!',type:'success'}));window.location='index.php?tab=technicians';</script>";
     exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_technician') {
     $conn->prepare("UPDATE technicians SET active = 0 WHERE id = ?")->execute([$_POST['id']]);
-    echo "<script>alert('Técnico removido!');window.location='index.php?tab=technicians';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Técnico removido!',type:'success'}));window.location='index.php?tab=technicians';</script>";
     exit;
 }
 
@@ -181,12 +205,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_techni
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_attendant') {
     $stmt = $conn->prepare("INSERT INTO attendants (name, phone) VALUES (?, ?)");
     $stmt->execute([$_POST['name'], $_POST['phone'] ?? null]);
-    echo "<script>alert('Atendente cadastrado com sucesso!');window.location='index.php?tab=attendants';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Atendente cadastrado com sucesso!',type:'success'}));window.location='index.php?tab=attendants';</script>";
     exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_attendant') {
     $conn->prepare("UPDATE attendants SET active = 0 WHERE id = ?")->execute([$_POST['id']]);
-    echo "<script>alert('Atendente removido!');window.location='index.php?tab=attendants';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Atendente removido!',type:'success'}));window.location='index.php?tab=attendants';</script>";
     exit;
 }
 
@@ -512,10 +536,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </button>
                         <?php endif; ?>
                         <?php if($row['id'] != $_SESSION['user_id']): ?>
-                        <form method="POST" onsubmit="return confirm('Excluir este usuário?');" style="display:inline;">
+                        <form method="POST" onsubmit="return false;" style="display:inline;" id="deleteUserForm_<?= $row['id'] ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" title="Excluir" onclick="showConfirm('Excluir este usuário?','Excluir','Excluir','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteUserForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                         </form>
                         <?php endif; ?>
                     </td>
@@ -549,10 +573,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <td><?= htmlspecialchars($tech['phone'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($tech['specialty'] ?? '-') ?></td>
                     <td>
-                        <form method="POST" style="display:inline;" onsubmit="return confirm('Remover este técnico?');">
+                        <form method="POST" style="display:inline;" onsubmit="return false;" id="deleteTechForm_<?= $tech['id'] ?>">
                             <input type="hidden" name="action" value="delete_technician">
                             <input type="hidden" name="id" value="<?= $tech['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="showConfirm('Remover este técnico?','Remover','Remover','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteTechForm_<?= $tech['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                         </form>
                     </td>
                 </tr>
@@ -583,10 +607,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <td><strong><?= htmlspecialchars($att['name']) ?></strong></td>
                     <td><?= htmlspecialchars($att['phone'] ?? '-') ?></td>
                     <td>
-                        <form method="POST" style="display:inline;" onsubmit="return confirm('Remover este atendente?');">
+                        <form method="POST" style="display:inline;" onsubmit="return false;" id="deleteAttForm_<?= $att['id'] ?>">
                             <input type="hidden" name="action" value="delete_attendant">
                             <input type="hidden" name="id" value="<?= $att['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="showConfirm('Remover este atendente?','Remover','Remover','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteAttForm_<?= $att['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                         </form>
                     </td>
                 </tr>
@@ -848,6 +872,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 </div>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}

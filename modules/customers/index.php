@@ -36,10 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['notes'] ?? null,
             !empty($_POST['birth_date']) ? $_POST['birth_date'] : null
         ]);
-        echo "<script>alert('Cliente cadastrado com sucesso!');window.location='index.php';</script>";
+        $newCustomerId = $conn->lastInsertId();
+        logActivity('create', 'customers', $newCustomerId,
+            "Cliente '{$_POST['name']}' cadastrado — CPF/CNPJ: " . ($_POST['cpf_cnpj'] ?? '-') . ", Tel: " . ($_POST['phone'] ?? '-')
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Cliente cadastrado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -47,6 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
     requirePermission('customers', 'edit');
     try {
+        // Buscar dados atuais para o log
+        $oldCust = $conn->prepare("SELECT name, phone, email, cpf_cnpj FROM customers WHERE id=?");
+        $oldCust->execute([$_POST['id']]);
+        $oldCustData = $oldCust->fetch(PDO::FETCH_ASSOC);
+
         $stmt = $conn->prepare("UPDATE customers
             SET name=?, cpf_cnpj=?, phone=?, email=?, address=?, city=?, state=?, zipcode=?, notes=?, birth_date=?, updated_at=NOW()
             WHERE id=?");
@@ -63,10 +72,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             !empty($_POST['birth_date']) ? $_POST['birth_date'] : null,
             $_POST['id']
         ]);
-        echo "<script>alert('Cliente atualizado com sucesso!');window.location='index.php';</script>";
+        logActivity('update', 'customers', (int)$_POST['id'],
+            "Cliente '{$_POST['name']}' editado",
+            $oldCustData ? ['nome' => $oldCustData['name'], 'cpf_cnpj' => $oldCustData['cpf_cnpj'], 'telefone' => $oldCustData['phone'], 'email' => $oldCustData['email']] : null,
+            ['nome' => $_POST['name'], 'cpf_cnpj' => $_POST['cpf_cnpj'] ?? null, 'telefone' => $_POST['phone'] ?? null, 'email' => $_POST['email'] ?? null]
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Cliente atualizado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao atualizar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -76,16 +90,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     try {
         $id = (int) $_POST['id'];
 
+        // Buscar nome antes de excluir
+        $delCust = $conn->prepare("SELECT name FROM customers WHERE id=?");
+        $delCust->execute([$id]);
+        $delCustName = $delCust->fetchColumn();
+
         // Soft delete: marca como deletado ao invés de remover do banco
         $stmt = $conn->prepare("UPDATE customers SET deleted_at = NOW() WHERE id = ?");
         $stmt->execute([$id]);
 
-        echo "<script>alert('Cliente excluído com sucesso!');window.location='index.php';</script>";
+        logActivity('delete', 'customers', $id,
+            "Cliente '$delCustName' excluído"
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Cliente excluído com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
 
     } catch (PDOException $e) {
         $errorMsg = "Erro ao excluir cliente: " . htmlspecialchars($e->getMessage());
-        echo "<script>alert('" . addslashes($errorMsg) . "');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'" . addslashes($errorMsg) . "',type:'error'}));window.location='index.php';</script>";
         exit;
     }
 }
@@ -471,10 +493,10 @@ textarea.form-control {
                         </button>
                         <?php endif; ?>
                         <?php if (hasPermission('customers', 'delete')): ?>
-                        <form method="POST" onsubmit="return confirm('Excluir este cliente?');" style="display:inline;">
+                        <form method="POST" onsubmit="return false;" style="display:inline;" id="deleteForm_<?= $row['id'] ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" title="Excluir" onclick="showConfirm('Excluir este cliente?','Excluir','Excluir','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                         </form>
                         <?php endif; ?>
                     </td>
@@ -695,6 +717,7 @@ textarea.form-control {
     </div>
 </div>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}

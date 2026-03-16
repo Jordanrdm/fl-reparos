@@ -218,56 +218,108 @@ function checkUserSession() {
 }
 
 /**
- * Mostrar alerta dinâmico
+ * Sistema de Notificações Customizadas FL Reparos
  */
-function showAlert(message, type = 'info') {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `message ${type}`;
-    alertDiv.innerHTML = message;
-    alertDiv.style.position = 'fixed';
-    alertDiv.style.top = '20px';
-    alertDiv.style.right = '20px';
-    alertDiv.style.zIndex = '9999';
-    alertDiv.style.minWidth = '300px';
-    alertDiv.style.opacity = '0';
-    alertDiv.style.transform = 'translateY(-20px)';
-    alertDiv.style.transition = 'all 0.3s ease';
-    alertDiv.style.padding = '15px';
-    alertDiv.style.borderRadius = '8px';
-    alertDiv.style.cursor = 'pointer';
-    
-    // Estilo baseado no tipo
-    if (type === 'success') {
-        alertDiv.style.background = '#d4edda';
-        alertDiv.style.color = '#155724';
-        alertDiv.style.border = '1px solid #c3e6cb';
-    } else if (type === 'error') {
-        alertDiv.style.background = '#f8d7da';
-        alertDiv.style.color = '#721c24';
-        alertDiv.style.border = '1px solid #f5c6cb';
-    } else if (type === 'warning') {
-        alertDiv.style.background = '#fff3cd';
-        alertDiv.style.color = '#856404';
-        alertDiv.style.border = '1px solid #ffeaa7';
-    } else {
-        alertDiv.style.background = '#d1ecf1';
-        alertDiv.style.color = '#0c5460';
-        alertDiv.style.border = '1px solid #bee5eb';
+
+// Verificar flash messages do sessionStorage ao carregar
+document.addEventListener('DOMContentLoaded', function() {
+    const flash = sessionStorage.getItem('fl_flash');
+    if (flash) {
+        sessionStorage.removeItem('fl_flash');
+        try {
+            const d = JSON.parse(flash);
+            setTimeout(() => showAlert(d.msg, d.type || 'info'), 300);
+        } catch(e) {}
     }
-    
-    document.body.appendChild(alertDiv);
-    
-    // Animação de entrada
-    setTimeout(() => {
-        alertDiv.style.opacity = '1';
-        alertDiv.style.transform = 'translateY(0)';
-    }, 100);
-    
-    // Auto-hide após 4 segundos
-    setTimeout(() => hideAlert(alertDiv), 4000);
-    
-    // Click para fechar
-    alertDiv.addEventListener('click', () => hideAlert(alertDiv));
+});
+
+function showAlert(message, type = 'info', duration = 4000) {
+    const icons = {
+        success: 'fas fa-check-circle',
+        error:   'fas fa-times-circle',
+        warning: 'fas fa-exclamation-triangle',
+        info:    'fas fa-info-circle'
+    };
+    const gradients = {
+        success: 'linear-gradient(135deg,#00b894,#00a381)',
+        error:   'linear-gradient(135deg,#e74c3c,#c0392b)',
+        warning: 'linear-gradient(135deg,#FF9800,#F57C00)',
+        info:    'linear-gradient(135deg,#667eea,#764ba2)'
+    };
+
+    let container = document.getElementById('fl-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'fl-toast-container';
+        container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    const bg = gradients[type] || gradients.info;
+    const icon = icons[type] || icons.info;
+
+    toast.style.cssText = `background:${bg};color:white;padding:12px 14px 12px 16px;border-radius:10px;display:flex;align-items:center;gap:10px;min-width:280px;max-width:400px;box-shadow:0 6px 24px rgba(0,0,0,0.25);pointer-events:all;cursor:pointer;transform:translateX(120%);transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1),opacity 0.35s ease;opacity:0;position:relative;overflow:hidden;`;
+
+    toast.innerHTML = `
+        <i class="${icon}" style="font-size:20px;flex-shrink:0;"></i>
+        <span style="flex:1;font-size:13px;font-weight:500;line-height:1.4;">${message}</span>
+        <button onclick="event.stopPropagation();this.closest('[data-fl-toast]').remove();" style="background:rgba(255,255,255,0.25);border:none;color:white;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;">&times;</button>
+        <div style="position:absolute;bottom:0;left:0;height:3px;background:rgba(255,255,255,0.45);animation:fl-progress ${duration}ms linear forwards;"></div>
+    `;
+    toast.setAttribute('data-fl-toast', '1');
+
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+        toast.style.transform = 'translateX(0)';
+        toast.style.opacity = '1';
+    });
+
+    const hide = () => {
+        toast.style.transform = 'translateX(120%)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 350);
+    };
+    toast.addEventListener('click', hide);
+    setTimeout(hide, duration);
+}
+
+function showConfirm(message, title = 'Confirmar', confirmText = 'Confirmar', cancelText = 'Cancelar', type = 'warning') {
+    return new Promise(resolve => {
+        const iconMap = {
+            warning: { icon: 'fas fa-exclamation-triangle', color: '#FF9800' },
+            danger:  { icon: 'fas fa-trash-alt',            color: '#e74c3c' },
+            info:    { icon: 'fas fa-question-circle',      color: '#667eea' },
+            success: { icon: 'fas fa-check-circle',         color: '#00b894' }
+        };
+        const t = iconMap[type] || iconMap.warning;
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
+
+        overlay.innerHTML = `
+            <div style="background:white;border-radius:16px;padding:28px 24px;max-width:420px;width:92%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:fl-confirm-in 0.25s cubic-bezier(0.34,1.56,0.64,1);">
+                <div style="width:60px;height:60px;border-radius:50%;background:${t.color}22;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+                    <i class="${t.icon}" style="font-size:26px;color:${t.color};"></i>
+                </div>
+                <h3 style="margin:0 0 8px;font-size:17px;color:#2d3436;font-weight:700;">${title}</h3>
+                <p style="margin:0 0 22px;font-size:13px;color:#636e72;line-height:1.6;">${message}</p>
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button id="fl-cancel" style="padding:9px 28px;border:1.5px solid #dfe6e9;background:white;border-radius:8px;cursor:pointer;font-size:13px;color:#636e72;font-weight:500;transition:all 0.2s;">${cancelText}</button>
+                    <button id="fl-ok" style="padding:9px 28px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 4px 15px rgba(102,126,234,0.4);">${confirmText}</button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+
+        const close = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('#fl-ok').addEventListener('click', () => close(true));
+        overlay.querySelector('#fl-cancel').addEventListener('click', () => close(false));
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+        document.addEventListener('keydown', function esc(e) {
+            if (e.key === 'Escape') { document.removeEventListener('keydown', esc); close(false); }
+        });
+    });
 }
 
 /**
@@ -345,6 +397,7 @@ function maskPhone(value) {
 // Expor funções globalmente
 window.FL_REPAROS = {
     showAlert,
+    showConfirm,
     formatMoney,
     formatDate,
     validateCPF,

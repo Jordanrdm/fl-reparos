@@ -21,6 +21,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
     exit;
 }
 
+// Endpoint AJAX: cadastro rápido de cliente dentro da OS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_customer') {
+    header('Content-Type: application/json');
+    try {
+        $stmt = $conn->prepare("INSERT INTO customers
+            (name, cpf_cnpj, phone, email, address, city, state, zipcode, notes, birth_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+        $stmt->execute([
+            $_POST['name'],
+            $_POST['cpf_cnpj'] ?: null,
+            $_POST['phone'] ?: null,
+            $_POST['email'] ?: null,
+            $_POST['address'] ?: null,
+            $_POST['city'] ?: null,
+            $_POST['state'] ?: null,
+            $_POST['zipcode'] ?: null,
+            $_POST['notes'] ?: null,
+            $_POST['birth_date'] ?: null,
+        ]);
+        $newId = $conn->lastInsertId();
+        echo json_encode(['success' => true, 'id' => $newId, 'name' => $_POST['name'], 'cpf_cnpj' => $_POST['cpf_cnpj'] ?? '', 'phone' => $_POST['phone'] ?? '']);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // =============================
 // 🔧 CRUD
 // =============================
@@ -74,11 +101,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['device_password'] ?? null,
             $_POST['password_pattern'] ?? null,
             isset($_POST['checklist_lens']) ? 1 : 0,
-            $_POST['checklist_lens_condition'] ?? null,
-            $_POST['checklist_back_cover'] ?? null,
+            null,
+            isset($_POST['checklist_back_cover']) ? '1' : null,
             isset($_POST['checklist_screen']) ? 1 : 0,
             isset($_POST['checklist_connector']) ? 1 : 0,
-            $_POST['checklist_camera_front_back'] ?? null,
+            isset($_POST['checklist_camera_front_back']) ? '1' : null,
             isset($_POST['checklist_face_id']) ? 1 : 0,
             isset($_POST['checklist_sim_card']) ? 1 : 0,
             $_POST['technician_name'] ?? null,
@@ -89,6 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
 
         // Pegar ID da OS criada
         $osId = $conn->lastInsertId();
+        // Buscar nome do cliente para o log
+        $stmtCustName = $conn->prepare("SELECT name FROM customers WHERE id=?");
+        $stmtCustName->execute([$_POST['customer_id']]);
+        $custNameLog = $stmtCustName->fetchColumn() ?: '?';
 
         // Salvar itens (produtos + serviços)
         if (!empty($_POST['products_data'])) {
@@ -124,10 +155,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             }
         }
 
-        echo "<script>alert('Ordem de serviço criada com sucesso!');window.location='index.php';</script>";
+        logActivity('create', 'service_orders', $osId,
+            "OS #$osId criada — Cliente: $custNameLog, Dispositivo: {$_POST['device']}, Total: " . formatMoney($_POST['total_cost'] ?? 0)
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Ordem de serviço criada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -142,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 
         // Bloquear edição se a OS já foi entregue
         if ($oldOrder['status'] === 'delivered') {
-            echo "<script>alert('⚠️ Ordem de Serviço já foi ENTREGUE e não pode mais ser editada!');window.location='index.php';</script>";
+            echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'⚠️ Ordem de Serviço já foi ENTREGUE e não pode mais ser editada!',type:'warning'}));window.location='index.php';</script>";
             exit;
         }
 
@@ -203,11 +237,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['device_password'] ?? null,
             $_POST['password_pattern'] ?? null,
             isset($_POST['checklist_lens']) ? 1 : 0,
-            $_POST['checklist_lens_condition'] ?? null,
-            $_POST['checklist_back_cover'] ?? null,
+            null,
+            isset($_POST['checklist_back_cover']) ? '1' : null,
             isset($_POST['checklist_screen']) ? 1 : 0,
             isset($_POST['checklist_connector']) ? 1 : 0,
-            $_POST['checklist_camera_front_back'] ?? null,
+            isset($_POST['checklist_camera_front_back']) ? '1' : null,
             isset($_POST['checklist_face_id']) ? 1 : 0,
             isset($_POST['checklist_sim_card']) ? 1 : 0,
             $_POST['technician_name'] ?? null,
@@ -352,10 +386,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             }
         }
 
-        echo "<script>alert('Ordem de serviço atualizada com sucesso!');window.location='index.php';</script>";
+        $statusLabels = ['open' => 'Aberta', 'in_progress' => 'Em andamento', 'completed' => 'Concluída', 'delivered' => 'Entregue', 'cancelled' => 'Cancelada'];
+        logActivity('update', 'service_orders', (int)$_POST['id'],
+            "OS #{$_POST['id']} editada — Status: " . ($statusLabels[$_POST['status']] ?? $_POST['status']) . ", Total: " . formatMoney($_POST['total_cost'] ?? 0),
+            ['status' => $statusLabels[$oldOrder['status']] ?? $oldOrder['status'], 'total' => formatMoney($oldOrder['total_cost']), 'pagamento' => $oldOrder['payment_method']],
+            ['status' => $statusLabels[$_POST['status']] ?? $_POST['status'], 'total' => formatMoney($_POST['total_cost'] ?? 0), 'pagamento' => $primaryMethod]
+        );
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Ordem de serviço atualizada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao atualizar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -370,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $order = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
     if ($order && $order['status'] === 'delivered') {
-        echo "<script>alert('⚠️ Não é possível excluir uma OS que já foi ENTREGUE!');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'⚠️ Não é possível excluir uma OS que já foi ENTREGUE!',type:'warning'}));window.location='index.php';</script>";
         exit;
     }
 
@@ -387,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $conn->prepare("DELETE FROM service_order_items WHERE service_order_id = ?")->execute([$id]);
     $stmt = $conn->prepare("DELETE FROM service_orders WHERE id = ?");
     $stmt->execute([$id]);
-    echo "<script>alert('Ordem de serviço excluída com sucesso! Estoque devolvido.');window.location='index.php';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Ordem de serviço excluída com sucesso! Estoque devolvido.',type:'success'}));window.location='index.php';</script>";
     exit;
 }
 
@@ -630,13 +670,14 @@ tr:hover {background:rgba(103,58,183,0.1);}
 }
 .close:hover {transform:rotate(90deg);background:#d32f2f;}
 .form-row {display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;}
-.form-group {flex:1;min-width:200px;}
+.form-group {flex:1;min-width:0;}
 .form-group label {display:block;margin-bottom:5px;font-weight:600;color:#333;}
 .form-control {
     width:100%;padding:10px;border:2px solid #ddd;border-radius:8px;
     font-size:1rem;transition:border .3s;
 }
 .form-control:focus {border-color:#667eea;outline:none;box-shadow:0 0 0 3px rgba(102,126,234,0.1);}
+#createModal .form-control, #editModal .form-control {padding:7px 10px;}
 .empty {text-align:center;padding:40px;color:#777;font-style:italic;}
 
 .filter-box {
@@ -897,10 +938,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </button>
                         <?php endif; ?>
                         <?php if (hasPermission('service_orders', 'delete')): ?>
-                        <form method="POST" onsubmit="return confirm('Excluir esta OS?');" style="display:inline;">
+                        <form method="POST" onsubmit="return false;" style="display:inline;" id="deleteOSForm_<?= $row['id'] ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" title="Excluir" onclick="showConfirm('Excluir esta OS?','Excluir','Excluir','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteOSForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                         </form>
                         <?php endif; ?>
                     <?php else: ?>
@@ -915,32 +956,29 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </table>
 </div>
 
-<!-- MODAL NOVA OS -->
+<!-- MODAL NOVA OS v2 -->
 <div id="createModal" class="modal">
     <div class="modal-content" style="max-width:95vw;width:1300px;">
         <div class="modal-header">
             <h2><i class="fas fa-plus-circle"></i> Nova Ordem de Serviço</h2>
-            <button class="close" onclick="closeModal('createModal')">&times;</button>
+            <button class="close" onclick="confirmCloseOS('createModal')">&times;</button>
         </div>
         <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="action" value="add">
 
-            <!-- 1. CLIENTE E APARELHO -->
-            <h3 style="margin:10px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-user"></i> Cliente e Aparelho
-            </h3>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
+            <!-- ROW 1: Cliente + Tipo + Modelo -->
+            <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
+                <div style="flex:0 0 320px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Cliente * <a href="#" onclick="openQuickCustomerModal(event)" style="font-size:11px;color:#00b894;margin-left:6px;"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
-                        <input type="text" id="createCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
+                        <input type="text" id="createCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off" style="font-size:13px;">
                         <input type="hidden" name="customer_id" id="createCustomerId" required>
                         <div id="createCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
-                <div class="form-group" style="flex:1;">
-                    <label>Tipo de Produto</label>
-                    <select name="device_type" class="form-control">
+                <div style="flex:0 0 160px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Tipo de Produto</label>
+                    <select name="device_type" class="form-control" style="font-size:13px;">
                         <option value="celular">Celular</option>
                         <option value="tablet">Tablet</option>
                         <option value="notebook">Notebook</option>
@@ -949,159 +987,148 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
-                <div class="form-group" style="flex:1.5;">
-                    <label>Modelo do Aparelho *</label>
-                    <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro">
+                <div style="flex:0 0 350px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Modelo do Aparelho *</label>
+                    <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro" style="font-size:13px;">
                 </div>
             </div>
 
-            <!-- 2. DIAGNÓSTICO -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-stethoscope"></i> Diagnóstico
-            </h3>
-            <div class="form-group">
-                <label>Problema Relatado</label>
-                <textarea name="reported_problem" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>O Aparelho Liga?</label>
-                    <select name="device_powers_on" class="form-control">
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                    </select>
+            <!-- ROW 2: 4 textareas side by side -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:30px;margin-bottom:10px;">
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Problema Relatado</label>
+                    <textarea name="reported_problem" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
                 </div>
-                <div class="form-group">
-                    <label>Senha do Aparelho</label>
-                    <input type="text" name="device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Laudo Técnico</label>
+                    <textarea name="technical_report" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
                 </div>
-            </div>
-            <div class="form-row" style="align-items:flex-start;">
-                <div class="form-group" style="flex:1;">
-                    <label>Senha Desenho (Padrão)</label>
-                    <div class="pattern-lock-container">
-                        <div class="pattern-grid-input" id="createPatternGrid">
-                            <?php for($i=1;$i<=9;$i++): ?>
-                            <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
-                            <?php endfor; ?>
-                        </div>
-                        <input type="hidden" name="password_pattern" id="createPasswordPattern">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
-                    </div>
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Observações para o Cliente</label>
+                    <textarea name="customer_observations" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
                 </div>
-                <div class="form-group" style="flex:1;">
-                    <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                    <input type="file" name="os_image" class="form-control" accept="image/*">
-                    <small style="color:#888;">Foto para registro interno, não será impressa</small>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Laudo Técnico</label>
-                <textarea name="technical_report" class="form-control" rows="2"></textarea>
-            </div>
-
-            <!-- 3. CHECKLIST -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
-            </h3>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_lens" value="1"> Lente
-                </label>
-                <div class="form-group" style="margin:0;">
-                    <select name="checklist_lens_condition" class="form-control">
-                        <option value="">Condição da lente</option>
-                        <option value="sem">Sem lente</option>
-                        <option value="arranhada">Arranhada</option>
-                        <option value="trincada">Trincada</option>
-                    </select>
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen" value="1"> Tela Trincada
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_sim_card" value="1"> Chip
-                </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_connector" value="1"> Conector
-                </label>
-                <div class="form-group" style="margin:0;grid-column:span 2;">
-                    <select name="checklist_camera_front_back" class="form-control">
-                        <option value="">Câmera</option>
-                        <option value="frontal">Frontal</option>
-                        <option value="traseira">Traseira</option>
-                        <option value="ambas">Ambas</option>
-                    </select>
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Observações Internas</label>
+                    <textarea name="internal_observations" class="form-control" rows="3" style="font-size:12px;resize:vertical;background:#fff9e6;"></textarea>
                 </div>
             </div>
 
-            <!-- 4. PRODUTOS E SERVIÇOS -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-box"></i> Produtos e Serviços
-            </h3>
-            <div id="create_products_section">
-                <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:10px;">
-                    <strong style="color:#667eea;font-size:13px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
-                    <div class="form-row" style="margin-top:8px;">
-                        <div class="form-group" style="flex:2;position:relative;">
-                            <label>Buscar Produto</label>
-                            <input type="text" id="create_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('create')">
-                            <div id="create_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                            <input type="hidden" id="create_selected_product_id">
-                            <input type="hidden" id="create_selected_product_name">
-                            <input type="hidden" id="create_selected_product_stock">
+            <!-- TABS -->
+            <div style="margin-bottom:0;">
+                <div style="display:flex;gap:0;border-bottom:2px solid #667eea;">
+                    <button type="button" id="create_tab_products_btn" onclick="switchTab('create','products')" style="padding:7px 18px;border:none;background:linear-gradient(45deg,#667eea,#764ba2);color:white;font-weight:600;font-size:13px;border-radius:6px 6px 0 0;cursor:pointer;">
+                        <i class="fas fa-box"></i> Produtos e Serviços
+                    </button>
+                    <button type="button" id="create_tab_payment_btn" onclick="switchTab('create','payment')" style="padding:7px 18px;border:none;background:#e9ecef;color:#666;font-weight:600;font-size:13px;border-radius:6px 6px 0 0;cursor:pointer;margin-left:4px;">
+                        <i class="fas fa-dollar-sign"></i> Pagamento
+                    </button>
+                </div>
+
+                <!-- TAB: Produtos e Serviços -->
+                <div id="create_tab_products" style="display:flex;gap:10px;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+                    <!-- LEFT: products/services -->
+                    <div style="flex:1;min-width:0;">
+                        <!-- Adicionar Produto -->
+                        <div style="background:#f8f9ff;padding:10px;border-radius:8px;margin-bottom:8px;">
+                            <strong style="color:#667eea;font-size:12px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                                <div style="position:relative;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Produto</label>
+                                    <input type="text" id="create_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('create')" style="font-size:12px;">
+                                    <div id="create_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                                    <input type="hidden" id="create_selected_product_id">
+                                    <input type="hidden" id="create_selected_product_name">
+                                    <input type="hidden" id="create_selected_product_stock">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço Unit. (R$)</label>
+                                    <input type="number" step="0.01" id="create_product_price_input" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
+                                    <input type="number" id="create_product_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                </div>
+                                <div style="display:flex;flex-direction:column;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
+                                    <button type="button" class="btn btn-primary" onclick="addProductToOS('create')" style="width:100%;font-size:12px;flex:1;">
+                                        <i class="fas fa-plus"></i> Adicionar
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Preço Unit. (R$)</label>
-                            <input type="number" step="0.01" id="create_product_price_input" class="form-control" placeholder="0,00">
+                        <!-- Adicionar Serviço -->
+                        <div style="background:#f0fff0;padding:10px;border-radius:8px;margin-bottom:8px;">
+                            <strong style="color:#4CAF50;font-size:12px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                                <div style="position:relative;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Serviço</label>
+                                    <input type="text" id="create_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('create')" style="font-size:12px;">
+                                    <div id="create_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                                    <input type="hidden" id="create_selected_service_id">
+                                    <input type="hidden" id="create_selected_service_name">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço (R$)</label>
+                                    <input type="number" step="0.01" id="create_service_price" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
+                                    <input type="number" id="create_service_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                </div>
+                                <div style="display:flex;flex-direction:column;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
+                                    <button type="button" class="btn btn-primary" onclick="addServiceToOS('create')" style="width:100%;font-size:12px;flex:1;background:linear-gradient(45deg,#4CAF50,#45a049);">
+                                        <i class="fas fa-plus"></i> Adicionar
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group" style="max-width:80px;">
-                            <label>Qtd</label>
-                            <input type="number" id="create_product_quantity" class="form-control" value="1" min="1">
+                        <div id="create_products_list"></div>
+                        <input type="hidden" id="create_products_data" name="products_data" value="[]">
+                    </div>
+                    <!-- RIGHT SIDEBAR: Checklist + Device info -->
+                    <div style="flex:0 0 240px;background:white;border:1px solid #e0e0e0;border-radius:8px;padding:10px;">
+                        <div style="font-size:12px;font-weight:700;color:#667eea;margin-bottom:8px;border-bottom:1px solid #f0f0f0;padding-bottom:5px;"><i class="fas fa-clipboard-check"></i> Checklist</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px;">
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_lens" value="1"> Lente</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_screen" value="1"> Tela Trincada</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_sim_card" value="1"> Chip</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_back_cover" value="1"> Tampa Traseira</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_face_id" value="1"> Sem Face ID</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_connector" value="1"> Conector</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_camera_front_back" value="1"> Câmera</label>
                         </div>
-                        <div class="form-group" style="max-width:120px;">
-                            <label>&nbsp;</label>
-                            <button type="button" class="btn btn-primary" onclick="addProductToOS('create')" style="width:100%;">
-                                <i class="fas fa-plus"></i> Adicionar
-                            </button>
+                        <div style="font-size:12px;font-weight:700;color:#667eea;margin-bottom:6px;border-bottom:1px solid #f0f0f0;padding-bottom:5px;"><i class="fas fa-mobile-alt"></i> Aparelho</div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">O Aparelho Liga?</label>
+                            <select name="device_powers_on" class="form-control" style="font-size:12px;padding:4px;">
+                                <option value="sim">Sim</option>
+                                <option value="nao">Não</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Senha do Aparelho</label>
+                            <input type="text" name="device_password" class="form-control" placeholder="Senha numérica ou alfanumérica" style="font-size:12px;padding:4px;">
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Senha Desenho (Padrão)</label>
+                            <div class="pattern-lock-container">
+                                <div class="pattern-grid-input" id="createPatternGrid">
+                                    <?php for($i=1;$i<=9;$i++): ?>
+                                    <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'create')"><span><?=$i?></span></div>
+                                    <?php endfor; ?>
+                                </div>
+                                <input type="hidden" name="password_pattern" id="createPasswordPattern">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('create')" style="margin-top:4px;font-size:10px;padding:3px 8px;"><i class="fas fa-redo"></i> Limpar</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-camera"></i> Foto do Aparelho</label>
+                            <input type="file" name="os_image" class="form-control" accept="image/*" style="font-size:11px;padding:3px;">
+                            <small style="color:#888;font-size:10px;">Registro interno, não será impresso</small>
                         </div>
                     </div>
                 </div>
-                <div style="background:#f0fff0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                    <strong style="color:#4CAF50;font-size:13px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
-                    <div class="form-row" style="margin-top:8px;">
-                        <div class="form-group" style="flex:2;position:relative;">
-                            <label>Buscar Serviço</label>
-                            <input type="text" id="create_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('create')">
-                            <div id="create_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                            <input type="hidden" id="create_selected_service_id">
-                            <input type="hidden" id="create_selected_service_name">
-                        </div>
-                        <div class="form-group">
-                            <label>Preço (R$)</label>
-                            <input type="number" step="0.01" id="create_service_price" class="form-control" placeholder="0,00">
-                        </div>
-                        <div class="form-group" style="max-width:80px;">
-                            <label>Qtd</label>
-                            <input type="number" id="create_service_quantity" class="form-control" value="1" min="1">
-                        </div>
-                        <div class="form-group" style="max-width:120px;">
-                            <label>&nbsp;</label>
-                            <button type="button" class="btn btn-primary" onclick="addServiceToOS('create')" style="width:100%;background:linear-gradient(45deg,#4CAF50,#45a049);">
-                                <i class="fas fa-plus"></i> Adicionar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div id="create_products_list"></div>
-                <input type="hidden" id="create_products_data" name="products_data" value="[]">
-            </div>
 
             <script>
             const availableProducts = <?= json_encode($products) ?>;
@@ -1190,175 +1217,177 @@ tr:hover {background:rgba(103,58,183,0.1);}
             });
             </script>
 
-            <!-- 5. RESPONSÁVEIS -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-users"></i> Responsáveis
-            </h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Técnico Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
-                        <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                <!-- TAB: Pagamento -->
+                <div id="create_tab_payment" style="display:none;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+                    <!-- Responsáveis -->
+                    <div style="display:flex;gap:30px;margin-bottom:10px;">
+                        <div style="flex:0 0 350px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
+                            <div style="position:relative;">
+                                <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
+                                <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                            </div>
+                        </div>
+                        <div style="flex:0 0 350px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
+                            <div style="position:relative;">
+                                <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
+                                <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Atendente Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
-                        <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    <!-- Resumo Financeiro -->
+                    <div id="create_financial_summary" style="background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #e0e0e0;">
+                            <div style="text-align:center;">
+                                <small style="color:#667eea;font-weight:bold;">Produtos</small>
+                                <div id="create_total_products_display" style="font-size:15px;font-weight:bold;color:#667eea;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
+                                <div id="create_total_services_display" style="font-size:15px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
+                                <div id="create_discount_display" style="font-size:15px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#333;font-weight:bold;">Total Final</small>
+                                <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
+                                    <span style="color:#333;font-weight:bold;">R$</span>
+                                    <input type="number" step="0.01" name="total_cost" id="create_total_cost" class="form-control" style="width:100px;font-size:15px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('create')">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;">
+                            <div style="text-align:center;">
+                                <small style="color:#9C27B0;font-weight:bold;">Entrada/Sinal</small>
+                                <div id="create_deposit_display" style="font-size:14px;font-weight:bold;color:#9C27B0;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#2196F3;font-weight:bold;">Pagamentos</small>
+                                <div id="create_payments_total_display" style="font-size:14px;font-weight:bold;color:#2196F3;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#f44336;font-weight:bold;">Restante</small>
+                                <div id="create_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
+                            </div>
+                            <div></div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- 6. PAGAMENTO -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-dollar-sign"></i> Pagamento
-            </h3>
-
-            <!-- Resumo Financeiro -->
-            <div id="create_financial_summary" style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
-                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#667eea;font-weight:bold;">Produtos</small>
-                        <div id="create_total_products_display" style="font-size:16px;font-weight:bold;color:#667eea;">R$ 0,00</div>
+                    <!-- Desconto + Entrada/Sinal side by side -->
+                    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
+                        <div style="background:#ffeef0;padding:12px;border-radius:8px;">
+                            <strong style="color:#e74c3c;font-size:12px;"><i class="fas fa-percentage"></i> Desconto</strong>
+                            <div style="display:flex;gap:16px;margin-top:6px;">
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Valor (R$)</label>
+                                    <input type="number" step="0.01" name="discount" id="create_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('create')" style="font-size:12px;width:180px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">ou Percentual (%)</label>
+                                    <input type="number" step="0.1" id="create_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('create')" style="font-size:12px;width:150px;">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="flex:0 0 220px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-hand-holding-usd"></i> Entrada/Sinal (R$)</label>
+                            <input type="number" step="0.01" name="deposit_amount" id="create_deposit_input" class="form-control" placeholder="0,00" value="0" oninput="updateFinancialBalance('create')" style="font-size:13px;">
+                            <small style="color:#888;font-size:11px;">Valor pago antecipadamente pelo cliente</small>
+                        </div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
-                        <div id="create_total_services_display" style="font-size:16px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
+                    <!-- Formas de Pagamento -->
+                    <div style="background:#fff3e0;padding:12px;border-radius:8px;margin-bottom:10px;">
+                        <strong style="color:#FF9800;font-size:12px;"><i class="fas fa-credit-card"></i> Adicionar Forma de Pagamento</strong>
+                        <div style="display:flex;gap:16px;margin-top:8px;align-items:flex-end;">
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Forma</label>
+                                <select id="create_new_payment_method" class="form-control" onchange="togglePaymentExtras('create')" style="font-size:12px;width:260px;">
+                                    <option value="dinheiro">Dinheiro</option>
+                                    <option value="pix">PIX</option>
+                                    <option value="cartao_credito">Cartão Crédito</option>
+                                    <option value="cartao_debito">Cartão Débito</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Valor (R$)</label>
+                                <input type="number" step="0.01" id="create_new_payment_amount" class="form-control" placeholder="0,00" oninput="calculateChange('create')" style="font-size:12px;width:140px;">
+                            </div>
+                            <div id="create_installments_group" style="display:none;">
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Parcelas</label>
+                                <select id="create_new_payment_installments" class="form-control" style="font-size:12px;width:90px;">
+                                    <?php for($i=1;$i<=12;$i++): ?><option value="<?=$i?>"><?=$i?>x</option><?php endfor; ?>
+                                </select>
+                            </div>
+                            <div id="create_change_group" style="display:none;">
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Troco</label>
+                                <input type="text" id="create_change_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#4CAF50;font-size:12px;width:110px;">
+                            </div>
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">&nbsp;</label>
+                                <button type="button" class="btn btn-primary" onclick="addPaymentToOS('create')" style="background:linear-gradient(45deg,#FF9800,#F57C00);white-space:nowrap;font-size:12px;padding:6px 16px;">
+                                    <i class="fas fa-plus"></i> Adicionar
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
-                        <div id="create_discount_display" style="font-size:16px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#333;font-weight:bold;">Total Final</small>
-                        <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
-                            <span style="color:#333;font-weight:bold;">R$</span>
-                            <input type="number" step="0.01" name="total_cost" id="create_total_cost" class="form-control" style="width:110px;font-size:16px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('create')">
+                    <div id="create_payments_list"></div>
+                    <input type="hidden" name="payment_methods" id="create_payment_methods_data" value="[]">
+                    <!-- Garantia -->
+                    <div style="display:flex;gap:16px;align-items:flex-end;margin-top:10px;">
+                        <div style="flex:0 0 300px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-shield-alt"></i> Período de Garantia</label>
+                            <select name="warranty_period" class="form-control" style="font-size:12px;">
+                                <option value="30 dias">30 dias</option>
+                                <option value="60 dias">60 dias</option>
+                                <option value="90 dias" selected>90 dias (Padrão)</option>
+                                <option value="3 meses">3 meses</option>
+                                <option value="4 meses">4 meses</option>
+                                <option value="6 meses">6 meses</option>
+                                <option value="1 ano">1 ano</option>
+                                <option value="Sem garantia">Sem garantia</option>
+                            </select>
+                        </div>
+                        <div style="flex:0 0 auto;">
+                            <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space:nowrap;font-size:12px;">
+                                <i class="fas fa-cog"></i> Configurar Termos
+                            </button>
                         </div>
                     </div>
                 </div>
-                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-top:10px;border-top:1px solid #e0e0e0;">
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#9C27B0;font-weight:bold;">Entrada/Sinal</small>
-                        <div id="create_deposit_display" style="font-size:14px;font-weight:bold;color:#9C27B0;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#2196F3;font-weight:bold;">Pagamentos</small>
-                        <div id="create_payments_total_display" style="font-size:14px;font-weight:bold;color:#2196F3;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#f44336;font-weight:bold;">Restante</small>
-                        <div id="create_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
-                    </div>
+            </div>
+
+            <!-- FOOTER: financial totals -->
+            <div style="display:flex;gap:0;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;">
+                <div style="flex:1;text-align:center;padding:8px;background:#f8f9ff;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#667eea;text-transform:uppercase;">Total Bruto</div>
+                    <div id="create_footer_bruto" style="font-size:14px;font-weight:bold;color:#667eea;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fff5f5;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#e74c3c;text-transform:uppercase;">Desconto</div>
+                    <div id="create_footer_desconto" style="font-size:14px;font-weight:bold;color:#e74c3c;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#f0fff0;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#4CAF50;text-transform:uppercase;">Total Líquido</div>
+                    <div id="create_footer_liquido" style="font-size:14px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#f8f9fa;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#333;text-transform:uppercase;">Total Itens</div>
+                    <div id="create_footer_itens" style="font-size:14px;font-weight:bold;color:#333;">0</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#e8f5e9;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;">Total Pago</div>
+                    <div id="create_footer_pago" style="font-size:14px;font-weight:bold;color:#2E7D32;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fff8e1;">
+                    <div style="font-size:10px;font-weight:700;color:#FF9800;text-transform:uppercase;">Troco</div>
+                    <div id="create_footer_troco" style="font-size:14px;font-weight:bold;color:#FF9800;">R$ 0,00</div>
                 </div>
             </div>
 
-            <!-- Desconto -->
-            <div style="background:#ffeef0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                <strong style="color:#e74c3c;font-size:13px;"><i class="fas fa-percentage"></i> Desconto</strong>
-                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
-                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
-                        <label style="font-size:12px;">Valor (R$)</label>
-                        <input type="number" step="0.01" name="discount" id="create_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('create')">
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
-                        <label style="font-size:12px;">ou Percentual (%)</label>
-                        <input type="number" step="0.1" id="create_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('create')">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Formas de Pagamento -->
-            <div style="background:#fff3e0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                <strong style="color:#FF9800;font-size:13px;"><i class="fas fa-credit-card"></i> Adicionar Forma de Pagamento</strong>
-                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
-                    <div class="form-group" style="margin-bottom:0;">
-                        <label style="font-size:12px;">Forma</label>
-                        <select id="create_new_payment_method" class="form-control" onchange="togglePaymentExtras('create')">
-                            <option value="dinheiro">Dinheiro</option>
-                            <option value="pix">PIX</option>
-                            <option value="cartao_credito">Cartão Crédito</option>
-                            <option value="cartao_debito">Cartão Débito</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;">
-                        <label style="font-size:12px;">Valor (R$)</label>
-                        <input type="number" step="0.01" id="create_new_payment_amount" class="form-control" placeholder="0,00" oninput="calculateChange('create')">
-                    </div>
-                    <div class="form-group" id="create_installments_group" style="margin-bottom:0;display:none;">
-                        <label style="font-size:12px;">Parcelas</label>
-                        <select id="create_new_payment_installments" class="form-control">
-                            <?php for($i=1;$i<=12;$i++): ?><option value="<?=$i?>"><?=$i?>x</option><?php endfor; ?>
-                        </select>
-                    </div>
-                    <div class="form-group" id="create_change_group" style="margin-bottom:0;display:none;">
-                        <label style="font-size:12px;">Troco</label>
-                        <input type="text" id="create_change_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#4CAF50;">
-                    </div>
-                    <div style="margin-bottom:0;">
-                        <button type="button" class="btn btn-primary" onclick="addPaymentToOS('create')" style="background:linear-gradient(45deg,#FF9800,#F57C00);">
-                            <i class="fas fa-plus"></i> Adicionar
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="create_payments_list"></div>
-            <input type="hidden" name="payment_methods" id="create_payment_methods_data" value="[]">
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label><i class="fas fa-hand-holding-usd"></i> Entrada/Sinal (R$)</label>
-                    <input type="number" step="0.01" name="deposit_amount" id="create_deposit_input" class="form-control" placeholder="0,00" value="0" oninput="updateFinancialBalance('create')">
-                    <small style="color:#888;">Valor pago antecipadamente pelo cliente</small>
-                </div>
-            </div>
-
-            <!-- 7. OBSERVAÇÕES E GARANTIA -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-comment-alt"></i> Observações
-            </h3>
-            <div class="form-row" style="align-items:flex-start;">
-                <div class="form-group">
-                    <label>Observações para o Cliente</label>
-                    <textarea name="customer_observations" class="form-control" rows="2"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Observações Internas</label>
-                    <textarea name="internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
-                    <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
-                </div>
-            </div>
-
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-shield-alt"></i> Garantia
-            </h3>
-            <div class="form-row">
-                <div class="form-group" style="flex: 1;">
-                    <label>Período de Garantia</label>
-                    <select name="warranty_period" class="form-control">
-                        <option value="30 dias">30 dias</option>
-                        <option value="60 dias">60 dias</option>
-                        <option value="90 dias" selected>90 dias (Padrão)</option>
-                        <option value="3 meses">3 meses</option>
-                        <option value="4 meses">4 meses</option>
-                        <option value="6 meses">6 meses</option>
-                        <option value="1 ano">1 ano</option>
-                        <option value="Sem garantia">Sem garantia</option>
-                    </select>
-                </div>
-                <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space: nowrap;">
-                        <i class="fas fa-cog"></i> Configurar Termos
-                    </button>
-                </div>
-            </div>
-
-            <div style="text-align:right;margin-top:20px;">
+            <div style="text-align:right;margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
-                <button type="button" class="btn btn-secondary" onclick="closeModal('createModal')"><i class="fas fa-times"></i> Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="confirmCloseOS('createModal')"><i class="fas fa-times"></i> Cancelar</button>
             </div>
         </form>
     </div>
@@ -1369,28 +1398,25 @@ tr:hover {background:rgba(103,58,183,0.1);}
     <div class="modal-content" style="max-width:95vw;width:1300px;">
         <div class="modal-header">
             <h2><i class="fas fa-edit"></i> Editar Ordem de Serviço</h2>
-            <button class="close" onclick="closeModal('editModal')">&times;</button>
+            <button class="close" onclick="confirmCloseOS('editModal')">&times;</button>
         </div>
         <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
 
-            <!-- 1. CLIENTE E APARELHO -->
-            <h3 style="margin:10px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-user"></i> Cliente e Aparelho
-            </h3>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Cliente * <a href="../customers/index.php" target="_blank" style="font-size:12px; color:#00b894; margin-left:8px;" title="Cadastrar novo cliente"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
+            <!-- ROW 1: Cliente + Tipo + Modelo + Status -->
+            <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
+                <div style="flex:0 0 320px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Cliente * <a href="#" onclick="openQuickCustomerModal(event)" style="font-size:11px;color:#00b894;margin-left:6px;"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
                     <div style="position:relative;">
-                        <input type="text" id="editCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off">
+                        <input type="text" id="editCustomerSearch" class="form-control" placeholder="Buscar por nome, CPF ou telefone..." autocomplete="off" style="font-size:13px;">
                         <input type="hidden" name="customer_id" id="edit_customer_id" required>
                         <div id="editCustomerSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
                     </div>
                 </div>
-                <div class="form-group" style="flex:1;">
-                    <label>Tipo de Produto</label>
-                    <select name="device_type" id="edit_device_type" class="form-control">
+                <div style="flex:0 0 160px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Tipo de Produto</label>
+                    <select name="device_type" id="edit_device_type" class="form-control" style="font-size:13px;">
                         <option value="celular">Celular</option>
                         <option value="tablet">Tablet</option>
                         <option value="notebook">Notebook</option>
@@ -1399,327 +1425,13 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
-                <div class="form-group" style="flex:1.5;">
-                    <label>Modelo do Aparelho *</label>
-                    <input type="text" name="device" id="edit_device" class="form-control" required>
+                <div style="flex:0 0 280px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Modelo do Aparelho *</label>
+                    <input type="text" name="device" id="edit_device" class="form-control" required style="font-size:13px;">
                 </div>
-            </div>
-
-            <!-- 2. DIAGNÓSTICO -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-stethoscope"></i> Diagnóstico
-            </h3>
-            <div class="form-group">
-                <label>Problema Relatado</label>
-                <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>O Aparelho Liga?</label>
-                    <select name="device_powers_on" id="edit_device_powers_on" class="form-control">
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Senha do Aparelho</label>
-                    <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Senha numérica ou alfanumérica">
-                </div>
-            </div>
-            <div class="form-row" style="align-items:flex-start;">
-                <div class="form-group" style="flex:1;">
-                    <label>Senha Desenho (Padrão)</label>
-                    <div class="pattern-lock-container">
-                        <div class="pattern-grid-input" id="editPatternGrid">
-                            <?php for($i=1;$i<=9;$i++): ?>
-                            <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
-                            <?php endfor; ?>
-                        </div>
-                        <input type="hidden" name="password_pattern" id="editPasswordPattern">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:5px;font-size:11px;"><i class="fas fa-redo"></i> Limpar</button>
-                    </div>
-                </div>
-                <div class="form-group" style="flex:1;">
-                    <label><i class="fas fa-camera"></i> Foto do Aparelho (interno)</label>
-                    <div id="edit_os_image_preview" style="display:none;margin-bottom:8px;">
-                        <img id="edit_os_image_thumb" src="" style="max-width:120px;max-height:120px;border-radius:8px;border:2px solid #ddd;">
-                        <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-left:8px;"><i class="fas fa-trash"></i> Remover</button>
-                        <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
-                    </div>
-                    <input type="file" name="os_image" class="form-control" accept="image/*">
-                    <small style="color:#888;">Foto para registro interno, não será impressa</small>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Laudo Técnico</label>
-                <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="2"></textarea>
-            </div>
-
-            <!-- 3. CHECKLIST -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-clipboard-check"></i> Checklist do Aparelho
-            </h3>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente
-                </label>
-                <div class="form-group" style="margin:0;">
-                    <select name="checklist_lens_condition" id="edit_checklist_lens_condition" class="form-control">
-                        <option value="">Condição da lente</option>
-                        <option value="sem">Sem lente</option>
-                        <option value="arranhada">Arranhada</option>
-                        <option value="trincada">Trincada</option>
-                    </select>
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip
-                </label>
-                <div class="form-group" style="margin:0;grid-column:1/-1;">
-                    <input type="text" name="checklist_back_cover" id="edit_checklist_back_cover" class="form-control" placeholder="Tampa traseira (trincada, detalhes...)">
-                </div>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector
-                </label>
-                <div class="form-group" style="margin:0;grid-column:span 2;">
-                    <select name="checklist_camera_front_back" id="edit_checklist_camera_front_back" class="form-control">
-                        <option value="">Câmera</option>
-                        <option value="frontal">Frontal</option>
-                        <option value="traseira">Traseira</option>
-                        <option value="ambas">Ambas</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- 4. PRODUTOS E SERVIÇOS -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-box"></i> Produtos e Serviços
-            </h3>
-            <div id="edit_products_section">
-                <div style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:10px;">
-                    <strong style="color:#667eea;font-size:13px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
-                    <div class="form-row" style="margin-top:8px;">
-                        <div class="form-group" style="flex:2;position:relative;">
-                            <label>Buscar Produto</label>
-                            <input type="text" id="edit_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('edit')">
-                            <div id="edit_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                            <input type="hidden" id="edit_selected_product_id">
-                            <input type="hidden" id="edit_selected_product_name">
-                            <input type="hidden" id="edit_selected_product_stock">
-                        </div>
-                        <div class="form-group">
-                            <label>Preço Unit. (R$)</label>
-                            <input type="number" step="0.01" id="edit_product_price_input" class="form-control" placeholder="0,00">
-                        </div>
-                        <div class="form-group" style="max-width:80px;">
-                            <label>Qtd</label>
-                            <input type="number" id="edit_product_quantity" class="form-control" value="1" min="1">
-                        </div>
-                        <div class="form-group" style="max-width:120px;">
-                            <label>&nbsp;</label>
-                            <button type="button" class="btn btn-primary" onclick="addProductToOS('edit')" style="width:100%;">
-                                <i class="fas fa-plus"></i> Adicionar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div style="background:#f0fff0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                    <strong style="color:#4CAF50;font-size:13px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
-                    <div class="form-row" style="margin-top:8px;">
-                        <div class="form-group" style="flex:2;position:relative;">
-                            <label>Buscar Serviço</label>
-                            <input type="text" id="edit_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('edit')">
-                            <div id="edit_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                            <input type="hidden" id="edit_selected_service_id">
-                            <input type="hidden" id="edit_selected_service_name">
-                        </div>
-                        <div class="form-group">
-                            <label>Preço (R$)</label>
-                            <input type="number" step="0.01" id="edit_service_price" class="form-control" placeholder="0,00">
-                        </div>
-                        <div class="form-group" style="max-width:80px;">
-                            <label>Qtd</label>
-                            <input type="number" id="edit_service_quantity" class="form-control" value="1" min="1">
-                        </div>
-                        <div class="form-group" style="max-width:120px;">
-                            <label>&nbsp;</label>
-                            <button type="button" class="btn btn-primary" onclick="addServiceToOS('edit')" style="width:100%;background:linear-gradient(45deg,#4CAF50,#45a049);">
-                                <i class="fas fa-plus"></i> Adicionar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div id="edit_products_list"></div>
-                <input type="hidden" id="edit_products_data" name="products_data" value="[]">
-            </div>
-
-            <!-- 5. RESPONSÁVEIS -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-users"></i> Responsáveis
-            </h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Técnico Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off">
-                        <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Atendente Responsável</label>
-                    <div style="position:relative;">
-                        <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off">
-                        <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 6. PAGAMENTO -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-dollar-sign"></i> Pagamento
-            </h3>
-
-            <!-- Resumo Financeiro -->
-            <div id="edit_financial_summary" style="background:#f8f9ff;padding:15px;border-radius:8px;margin-bottom:15px;">
-                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#667eea;font-weight:bold;">Produtos</small>
-                        <div id="edit_total_products_display" style="font-size:16px;font-weight:bold;color:#667eea;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
-                        <div id="edit_total_services_display" style="font-size:16px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
-                        <div id="edit_discount_display" style="font-size:16px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:100px;">
-                        <small style="color:#333;font-weight:bold;">Total Final</small>
-                        <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
-                            <span style="color:#333;font-weight:bold;">R$</span>
-                            <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control" style="width:110px;font-size:16px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('edit')">
-                        </div>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-top:10px;border-top:1px solid #e0e0e0;">
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#9C27B0;font-weight:bold;">Entrada/Sinal</small>
-                        <div id="edit_deposit_display" style="font-size:14px;font-weight:bold;color:#9C27B0;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#2196F3;font-weight:bold;">Pagamentos</small>
-                        <div id="edit_payments_total_display" style="font-size:14px;font-weight:bold;color:#2196F3;">R$ 0,00</div>
-                    </div>
-                    <div style="text-align:center;flex:1;min-width:120px;">
-                        <small style="color:#f44336;font-weight:bold;">Restante</small>
-                        <div id="edit_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Desconto -->
-            <div style="background:#ffeef0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                <strong style="color:#e74c3c;font-size:13px;"><i class="fas fa-percentage"></i> Desconto</strong>
-                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
-                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
-                        <label style="font-size:12px;">Valor (R$)</label>
-                        <input type="number" step="0.01" name="discount" id="edit_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('edit')">
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;max-width:150px;">
-                        <label style="font-size:12px;">ou Percentual (%)</label>
-                        <input type="number" step="0.1" id="edit_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('edit')">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Formas de Pagamento -->
-            <div style="background:#fff3e0;padding:15px;border-radius:8px;margin-bottom:10px;">
-                <strong style="color:#FF9800;font-size:13px;"><i class="fas fa-credit-card"></i> Adicionar Forma de Pagamento</strong>
-                <div class="form-row" style="margin-top:8px;align-items:flex-end;">
-                    <div class="form-group" style="margin-bottom:0;">
-                        <label style="font-size:12px;">Forma</label>
-                        <select id="edit_new_payment_method" class="form-control" onchange="togglePaymentExtras('edit')">
-                            <option value="dinheiro">Dinheiro</option>
-                            <option value="pix">PIX</option>
-                            <option value="cartao_credito">Cartão Crédito</option>
-                            <option value="cartao_debito">Cartão Débito</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;">
-                        <label style="font-size:12px;">Valor (R$)</label>
-                        <input type="number" step="0.01" id="edit_new_payment_amount" class="form-control" placeholder="0,00" oninput="calculateChange('edit')">
-                    </div>
-                    <div class="form-group" id="edit_installments_group" style="margin-bottom:0;display:none;">
-                        <label style="font-size:12px;">Parcelas</label>
-                        <select id="edit_new_payment_installments" class="form-control">
-                            <?php for($i=1;$i<=12;$i++): ?><option value="<?=$i?>"><?=$i?>x</option><?php endfor; ?>
-                        </select>
-                    </div>
-                    <div class="form-group" id="edit_change_group" style="margin-bottom:0;display:none;">
-                        <label style="font-size:12px;">Troco</label>
-                        <input type="text" id="edit_change_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#4CAF50;">
-                    </div>
-                    <div style="margin-bottom:0;">
-                        <button type="button" class="btn btn-primary" onclick="addPaymentToOS('edit')" style="background:linear-gradient(45deg,#FF9800,#F57C00);">
-                            <i class="fas fa-plus"></i> Adicionar
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="edit_payments_list"></div>
-            <input type="hidden" name="payment_methods" id="edit_payment_methods_data" value="[]">
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label><i class="fas fa-hand-holding-usd"></i> Entrada/Sinal (R$)</label>
-                    <input type="number" step="0.01" name="deposit_amount" id="edit_deposit_amount" class="form-control" placeholder="0,00" value="0" oninput="updateFinancialBalance('edit')">
-                    <small style="color:#888;">Valor pago antecipadamente pelo cliente</small>
-                </div>
-            </div>
-
-            <!-- 7. OBSERVAÇÕES, GARANTIA E STATUS -->
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-comment-alt"></i> Observações
-            </h3>
-            <div class="form-row" style="align-items:flex-start;">
-                <div class="form-group">
-                    <label>Observações para o Cliente</label>
-                    <textarea name="customer_observations" id="edit_customer_observations" class="form-control" rows="2"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Observações Internas</label>
-                    <textarea name="internal_observations" id="edit_internal_observations" class="form-control" rows="2" style="background:#fff9e6;"></textarea>
-                    <small style="color:#666;"><i class="fas fa-lock"></i> Não serão impressas</small>
-                </div>
-            </div>
-
-            <h3 style="margin:12px 0 8px;color:#667eea;border-bottom:2px solid #f0f0f0;padding-bottom:6px;">
-                <i class="fas fa-shield-alt"></i> Garantia e Status
-            </h3>
-            <div class="form-row">
-                <div class="form-group" style="flex: 1;">
-                    <label>Período de Garantia</label>
-                    <select name="warranty_period" id="edit_warranty_period" class="form-control">
-                        <option value="30 dias">30 dias</option>
-                        <option value="60 dias">60 dias</option>
-                        <option value="90 dias">90 dias (Padrão)</option>
-                        <option value="3 meses">3 meses</option>
-                        <option value="4 meses">4 meses</option>
-                        <option value="6 meses">6 meses</option>
-                        <option value="1 ano">1 ano</option>
-                        <option value="Sem garantia">Sem garantia</option>
-                    </select>
-                </div>
-                <div class="form-group" style="flex: 1;">
-                    <label>Status *</label>
-                    <select name="status" id="edit_status" class="form-control" required>
+                <div style="flex:0 0 160px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Status *</label>
+                    <select name="status" id="edit_status" class="form-control" required style="font-size:13px;">
                         <option value="open">Aguardando</option>
                         <option value="in_progress">Em Andamento</option>
                         <option value="completed">Concluído</option>
@@ -1728,16 +1440,320 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="cancelled">Cancelado</option>
                     </select>
                 </div>
-                <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space: nowrap;">
-                        <i class="fas fa-cog"></i> Configurar Termos
+            </div>
+
+            <!-- ROW 2: 4 textareas side by side -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:30px;margin-bottom:10px;">
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Problema Relatado</label>
+                    <textarea name="reported_problem" id="edit_reported_problem" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Laudo Técnico</label>
+                    <textarea name="technical_report" id="edit_technical_report" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Observações para o Cliente</label>
+                    <textarea name="customer_observations" id="edit_customer_observations" class="form-control" rows="3" style="font-size:12px;resize:vertical;"></textarea>
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Observações Internas</label>
+                    <textarea name="internal_observations" id="edit_internal_observations" class="form-control" rows="3" style="font-size:12px;resize:vertical;background:#fff9e6;"></textarea>
+                </div>
+            </div>
+            <!-- TABS -->
+            <div style="margin-bottom:0;">
+                <div style="display:flex;gap:0;border-bottom:2px solid #667eea;">
+                    <button type="button" id="edit_tab_products_btn" onclick="switchTab('edit','products')" style="padding:7px 18px;border:none;background:linear-gradient(45deg,#667eea,#764ba2);color:white;font-weight:600;font-size:13px;border-radius:6px 6px 0 0;cursor:pointer;">
+                        <i class="fas fa-box"></i> Produtos e Serviços
                     </button>
+                    <button type="button" id="edit_tab_payment_btn" onclick="switchTab('edit','payment')" style="padding:7px 18px;border:none;background:#e9ecef;color:#666;font-weight:600;font-size:13px;border-radius:6px 6px 0 0;cursor:pointer;margin-left:4px;">
+                        <i class="fas fa-dollar-sign"></i> Pagamento
+                    </button>
+                </div>
+
+                <!-- TAB: Produtos e Serviços -->
+                <div id="edit_tab_products" style="display:flex;gap:10px;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+                    <!-- LEFT: products/services -->
+                    <div style="flex:1;min-width:0;">
+                        <!-- Adicionar Produto -->
+                        <div style="background:#f8f9ff;padding:10px;border-radius:8px;margin-bottom:8px;">
+                            <strong style="color:#667eea;font-size:12px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                                <div style="position:relative;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Produto</label>
+                                    <input type="text" id="edit_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('edit')" style="font-size:12px;">
+                                    <div id="edit_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                                    <input type="hidden" id="edit_selected_product_id">
+                                    <input type="hidden" id="edit_selected_product_name">
+                                    <input type="hidden" id="edit_selected_product_stock">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço Unit. (R$)</label>
+                                    <input type="number" step="0.01" id="edit_product_price_input" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
+                                    <input type="number" id="edit_product_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                </div>
+                                <div style="display:flex;flex-direction:column;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
+                                    <button type="button" class="btn btn-primary" onclick="addProductToOS('edit')" style="width:100%;font-size:12px;flex:1;">
+                                        <i class="fas fa-plus"></i> Adicionar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Adicionar Serviço -->
+                        <div style="background:#f0fff0;padding:10px;border-radius:8px;margin-bottom:8px;">
+                            <strong style="color:#4CAF50;font-size:12px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                                <div style="position:relative;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Serviço</label>
+                                    <input type="text" id="edit_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('edit')" style="font-size:12px;">
+                                    <div id="edit_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
+                                    <input type="hidden" id="edit_selected_service_id">
+                                    <input type="hidden" id="edit_selected_service_name">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço (R$)</label>
+                                    <input type="number" step="0.01" id="edit_service_price" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
+                                    <input type="number" id="edit_service_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                </div>
+                                <div style="display:flex;flex-direction:column;">
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
+                                    <button type="button" class="btn btn-primary" onclick="addServiceToOS('edit')" style="width:100%;font-size:12px;flex:1;background:linear-gradient(45deg,#4CAF50,#45a049);">
+                                        <i class="fas fa-plus"></i> Adicionar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="edit_products_list"></div>
+                        <input type="hidden" id="edit_products_data" name="products_data" value="[]">
+                    </div>
+                    <!-- RIGHT SIDEBAR: Checklist + Device info -->
+                    <div style="flex:0 0 240px;background:white;border:1px solid #e0e0e0;border-radius:8px;padding:10px;">
+                        <div style="font-size:12px;font-weight:700;color:#667eea;margin-bottom:8px;border-bottom:1px solid #f0f0f0;padding-bottom:5px;"><i class="fas fa-clipboard-check"></i> Checklist</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px;">
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_lens" id="edit_checklist_lens" value="1"> Lente</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_screen" id="edit_checklist_screen" value="1"> Tela Trincada</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_sim_card" id="edit_checklist_sim_card" value="1"> Chip</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_back_cover" id="edit_checklist_back_cover" value="1"> Tampa Traseira</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_face_id" id="edit_checklist_face_id" value="1"> Sem Face ID</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_connector" id="edit_checklist_connector" value="1"> Conector</label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" name="checklist_camera_front_back" id="edit_checklist_camera_front_back" value="1"> Câmera</label>
+                        </div>
+                        <div style="font-size:12px;font-weight:700;color:#667eea;margin-bottom:6px;border-bottom:1px solid #f0f0f0;padding-bottom:5px;"><i class="fas fa-mobile-alt"></i> Aparelho</div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">O Aparelho Liga?</label>
+                            <select name="device_powers_on" id="edit_device_powers_on" class="form-control" style="font-size:12px;padding:4px;">
+                                <option value="sim">Sim</option>
+                                <option value="nao">Não</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Senha do Aparelho</label>
+                            <input type="text" name="device_password" id="edit_device_password" class="form-control" placeholder="Senha numérica ou alfanumérica" style="font-size:12px;padding:4px;">
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Senha Desenho (Padrão)</label>
+                            <div class="pattern-lock-container">
+                                <div class="pattern-grid-input" id="editPatternGrid">
+                                    <?php for($i=1;$i<=9;$i++): ?>
+                                    <div class="pattern-dot" data-dot="<?=$i?>" onclick="toggleDot(this,'edit')"><span><?=$i?></span></div>
+                                    <?php endfor; ?>
+                                </div>
+                                <input type="hidden" name="password_pattern" id="editPasswordPattern">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="clearPattern('edit')" style="margin-top:4px;font-size:10px;padding:3px 8px;"><i class="fas fa-redo"></i> Limpar</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-camera"></i> Foto do Aparelho</label>
+                            <div id="edit_os_image_preview" style="display:none;margin-bottom:6px;">
+                                <img id="edit_os_image_thumb" src="" style="max-width:100%;max-height:80px;border-radius:6px;border:2px solid #ddd;">
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-top:4px;font-size:10px;padding:3px 8px;"><i class="fas fa-trash"></i> Remover</button>
+                                <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
+                            </div>
+                            <input type="file" name="os_image" class="form-control" accept="image/*" style="font-size:11px;padding:3px;">
+                            <small style="color:#888;font-size:10px;">Registro interno, não será impresso</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: Pagamento -->
+                <div id="edit_tab_payment" style="display:none;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+                    <!-- Responsáveis -->
+                    <div style="display:flex;gap:30px;margin-bottom:10px;">
+                        <div style="flex:0 0 350px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
+                            <div style="position:relative;">
+                                <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
+                                <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                            </div>
+                        </div>
+                        <div style="flex:0 0 350px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
+                            <div style="position:relative;">
+                                <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
+                                <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Resumo Financeiro -->
+                    <div id="edit_financial_summary" style="background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #e0e0e0;">
+                            <div style="text-align:center;">
+                                <small style="color:#667eea;font-weight:bold;">Produtos</small>
+                                <div id="edit_total_products_display" style="font-size:15px;font-weight:bold;color:#667eea;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#4CAF50;font-weight:bold;">Serviços</small>
+                                <div id="edit_total_services_display" style="font-size:15px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#e74c3c;font-weight:bold;">Desconto</small>
+                                <div id="edit_discount_display" style="font-size:15px;font-weight:bold;color:#e74c3c;">- R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#333;font-weight:bold;">Total Final</small>
+                                <div style="display:flex;align-items:center;justify-content:center;gap:5px;">
+                                    <span style="color:#333;font-weight:bold;">R$</span>
+                                    <input type="number" step="0.01" name="total_cost" id="edit_total_cost" class="form-control" style="width:100px;font-size:15px;font-weight:bold;text-align:center;color:#333;" value="0" oninput="updateFinancialBalance('edit')">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;">
+                            <div style="text-align:center;">
+                                <small style="color:#9C27B0;font-weight:bold;">Entrada/Sinal</small>
+                                <div id="edit_deposit_display" style="font-size:14px;font-weight:bold;color:#9C27B0;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#2196F3;font-weight:bold;">Pagamentos</small>
+                                <div id="edit_payments_total_display" style="font-size:14px;font-weight:bold;color:#2196F3;">R$ 0,00</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <small style="color:#f44336;font-weight:bold;">Restante</small>
+                                <div id="edit_remaining_display" style="font-size:14px;font-weight:bold;color:#f44336;">R$ 0,00</div>
+                            </div>
+                            <div></div>
+                        </div>
+                    </div>
+                    <!-- Desconto + Entrada/Sinal side by side -->
+                    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
+                        <div style="background:#ffeef0;padding:12px;border-radius:8px;">
+                            <strong style="color:#e74c3c;font-size:12px;"><i class="fas fa-percentage"></i> Desconto</strong>
+                            <div style="display:flex;gap:16px;margin-top:6px;">
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Valor (R$)</label>
+                                    <input type="number" step="0.01" name="discount" id="edit_discount" class="form-control" placeholder="0,00" value="0" min="0" oninput="applyDiscount('edit')" style="font-size:12px;width:180px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">ou Percentual (%)</label>
+                                    <input type="number" step="0.1" id="edit_discount_percent" class="form-control" placeholder="0%" min="0" max="100" oninput="applyDiscountPercent('edit')" style="font-size:12px;width:150px;">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="flex:0 0 220px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-hand-holding-usd"></i> Entrada/Sinal (R$)</label>
+                            <input type="number" step="0.01" name="deposit_amount" id="edit_deposit_amount" class="form-control" placeholder="0,00" value="0" oninput="updateFinancialBalance('edit')" style="font-size:13px;">
+                            <small style="color:#888;font-size:11px;">Valor pago antecipadamente pelo cliente</small>
+                        </div>
+                    </div>
+                    <!-- Formas de Pagamento -->
+                    <div style="background:#fff3e0;padding:12px;border-radius:8px;margin-bottom:10px;">
+                        <strong style="color:#FF9800;font-size:12px;"><i class="fas fa-credit-card"></i> Adicionar Forma de Pagamento</strong>
+                        <div style="display:flex;gap:16px;margin-top:8px;align-items:flex-end;">
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Forma</label>
+                                <select id="edit_new_payment_method" class="form-control" onchange="togglePaymentExtras('edit')" style="font-size:12px;width:260px;">
+                                    <option value="dinheiro">Dinheiro</option>
+                                    <option value="pix">PIX</option>
+                                    <option value="cartao_credito">Cartão Crédito</option>
+                                    <option value="cartao_debito">Cartão Débito</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Valor (R$)</label>
+                                <input type="number" step="0.01" id="edit_new_payment_amount" class="form-control" placeholder="0,00" oninput="calculateChange('edit')" style="font-size:12px;width:140px;">
+                            </div>
+                            <div id="edit_installments_group" style="display:none;">
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Parcelas</label>
+                                <select id="edit_new_payment_installments" class="form-control" style="font-size:12px;width:90px;">
+                                    <?php for($i=1;$i<=12;$i++): ?><option value="<?=$i?>"><?=$i?>x</option><?php endfor; ?>
+                                </select>
+                            </div>
+                            <div id="edit_change_group" style="display:none;">
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Troco</label>
+                                <input type="text" id="edit_change_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#4CAF50;font-size:12px;width:110px;">
+                            </div>
+                            <div>
+                                <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">&nbsp;</label>
+                                <button type="button" class="btn btn-primary" onclick="addPaymentToOS('edit')" style="background:linear-gradient(45deg,#FF9800,#F57C00);white-space:nowrap;font-size:12px;padding:6px 16px;">
+                                    <i class="fas fa-plus"></i> Adicionar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="edit_payments_list"></div>
+                    <input type="hidden" name="payment_methods" id="edit_payment_methods_data" value="[]">
+                    <!-- Garantia -->
+                    <div style="display:flex;gap:16px;align-items:flex-end;margin-top:10px;">
+                        <div style="flex:0 0 300px;">
+                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-shield-alt"></i> Período de Garantia</label>
+                            <select name="warranty_period" id="edit_warranty_period" class="form-control" style="font-size:12px;">
+                                <option value="30 dias">30 dias</option>
+                                <option value="60 dias">60 dias</option>
+                                <option value="90 dias">90 dias (Padrão)</option>
+                                <option value="3 meses">3 meses</option>
+                                <option value="4 meses">4 meses</option>
+                                <option value="6 meses">6 meses</option>
+                                <option value="1 ano">1 ano</option>
+                                <option value="Sem garantia">Sem garantia</option>
+                            </select>
+                        </div>
+                        <div style="flex:0 0 auto;">
+                            <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space:nowrap;font-size:12px;">
+                                <i class="fas fa-cog"></i> Configurar Termos
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div style="text-align:right;margin-top:20px;">
+            <!-- FOOTER: financial totals -->
+            <div style="display:flex;gap:0;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;">
+                <div style="flex:1;text-align:center;padding:8px;background:#f8f9ff;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#667eea;text-transform:uppercase;">Total Bruto</div>
+                    <div id="edit_footer_bruto" style="font-size:14px;font-weight:bold;color:#667eea;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fff5f5;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#e74c3c;text-transform:uppercase;">Desconto</div>
+                    <div id="edit_footer_desconto" style="font-size:14px;font-weight:bold;color:#e74c3c;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#f0fff0;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#4CAF50;text-transform:uppercase;">Total Líquido</div>
+                    <div id="edit_footer_liquido" style="font-size:14px;font-weight:bold;color:#4CAF50;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#f8f9fa;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#333;text-transform:uppercase;">Total Itens</div>
+                    <div id="edit_footer_itens" style="font-size:14px;font-weight:bold;color:#333;">0</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#e8f5e9;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;">Total Pago</div>
+                    <div id="edit_footer_pago" style="font-size:14px;font-weight:bold;color:#2E7D32;">R$ 0,00</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fff8e1;">
+                    <div style="font-size:10px;font-weight:700;color:#FF9800;text-transform:uppercase;">Troco</div>
+                    <div id="edit_footer_troco" style="font-size:14px;font-weight:bold;color:#FF9800;">R$ 0,00</div>
+                </div>
+            </div>
+
+            <div style="text-align:right;margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Atualizar</button>
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')"><i class="fas fa-times"></i> Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="confirmCloseOS('editModal')"><i class="fas fa-times"></i> Cancelar</button>
             </div>
         </form>
     </div>
@@ -1777,6 +1793,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 </div>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 // Dados para autocomplete
 const osCustomers = <?php echo json_encode($customers); ?>;
@@ -1906,10 +1923,10 @@ function addProductToOS(mode) {
     const quantityInput = document.getElementById(mode + '_product_quantity');
     const quantity = parseInt(quantityInput.value);
 
-    if (!productId) { alert('Selecione um produto'); return; }
-    if (!price || price <= 0) { alert('Informe o preço do produto'); return; }
-    if (stock <= 0) { alert('Produto sem estoque disponível!'); return; }
-    if (quantity > stock) { alert('Quantidade indisponível! Estoque: ' + stock); return; }
+    if (!productId) { showAlert('Selecione um produto', 'warning'); return; }
+    if (!price || price <= 0) { showAlert('Informe o preço do produto', 'warning'); return; }
+    if (stock <= 0) { showAlert('Produto sem estoque disponível!', 'warning'); return; }
+    if (quantity > stock) { showAlert('Quantidade indisponível! Estoque: ' + stock, 'warning'); return; }
 
     const item = {
         type: 'product',
@@ -1941,8 +1958,8 @@ function addServiceToOS(mode) {
     const quantityInput = document.getElementById(mode + '_service_quantity');
     const quantity = parseInt(quantityInput.value);
 
-    if (!serviceId) { alert('Selecione um serviço do catálogo'); return; }
-    if (!price || price <= 0) { alert('Informe o preço do serviço'); return; }
+    if (!serviceId) { showAlert('Selecione um serviço do catálogo', 'warning'); return; }
+    if (!price || price <= 0) { showAlert('Informe o preço do serviço', 'warning'); return; }
 
     const item = {
         type: 'service',
@@ -2056,7 +2073,7 @@ function addPaymentToOS(mode) {
     const amount = parseFloat(document.getElementById(mode + '_new_payment_amount').value);
     const installments = method === 'cartao_credito' ? parseInt(document.getElementById(mode + '_new_payment_installments').value) || 1 : 1;
 
-    if (!amount || amount <= 0) { alert('Informe o valor do pagamento'); return; }
+    if (!amount || amount <= 0) { showAlert('Informe o valor do pagamento', 'warning'); return; }
 
     const payments = mode === 'create' ? createPayments : editPayments;
 
@@ -2203,6 +2220,33 @@ function updateFinancialBalance(mode) {
     } else {
         remainingEl.style.color = '#f44336';
     }
+
+    // Atualizar barra de totais no rodapé
+    const bruto = totalProducts + totalServices;
+    const total = Math.max(0, bruto - discount);
+    const totalChange = payments.reduce((sum, p) => sum + (p.change || 0), 0);
+    const totalPago = deposit + totalPayments;
+    const footerBruto = document.getElementById(mode + '_footer_bruto');
+    const footerDesconto = document.getElementById(mode + '_footer_desconto');
+    const footerLiquido = document.getElementById(mode + '_footer_liquido');
+    const footerItens = document.getElementById(mode + '_footer_itens');
+    const footerPago = document.getElementById(mode + '_footer_pago');
+    const footerTroco = document.getElementById(mode + '_footer_troco');
+    if (footerBruto) footerBruto.textContent = fmt(bruto);
+    if (footerDesconto) footerDesconto.textContent = fmt(discount);
+    if (footerLiquido) footerLiquido.textContent = fmt(total);
+    if (footerItens) footerItens.textContent = items.reduce((s, i) => s + i.quantity, 0);
+    if (footerPago) footerPago.textContent = fmt(totalPago);
+    if (footerTroco) footerTroco.textContent = fmt(totalChange);
+}
+
+function switchTab(mode, tab) {
+    document.getElementById(mode + '_tab_products').style.display = tab === 'products' ? 'flex' : 'none';
+    document.getElementById(mode + '_tab_payment').style.display = tab === 'payment' ? 'block' : 'none';
+    document.getElementById(mode + '_tab_products_btn').style.background = tab === 'products' ? 'linear-gradient(45deg,#667eea,#764ba2)' : '#e9ecef';
+    document.getElementById(mode + '_tab_products_btn').style.color = tab === 'products' ? 'white' : '#666';
+    document.getElementById(mode + '_tab_payment_btn').style.background = tab === 'payment' ? 'linear-gradient(45deg,#667eea,#764ba2)' : '#e9ecef';
+    document.getElementById(mode + '_tab_payment_btn').style.color = tab === 'payment' ? 'white' : '#666';
 }
 
 function openEditModal(o){
@@ -2264,11 +2308,10 @@ function openEditModal(o){
 
     // Checklist
     document.getElementById('edit_checklist_lens').checked=o.checklist_lens==1;
-    document.getElementById('edit_checklist_lens_condition').value=o.checklist_lens_condition||'';
-    document.getElementById('edit_checklist_back_cover').value=o.checklist_back_cover||'';
+    document.getElementById('edit_checklist_back_cover').checked=!!(o.checklist_back_cover);
     document.getElementById('edit_checklist_screen').checked=o.checklist_screen==1;
     document.getElementById('edit_checklist_connector').checked=o.checklist_connector==1;
-    document.getElementById('edit_checklist_camera_front_back').value=o.checklist_camera_front_back||'';
+    document.getElementById('edit_checklist_camera_front_back').checked=!!(o.checklist_camera_front_back);
     document.getElementById('edit_checklist_face_id').checked=o.checklist_face_id==1;
     document.getElementById('edit_checklist_sim_card').checked=o.checklist_sim_card==1;
 
@@ -2346,14 +2389,14 @@ async function unlockServiceOrder(event) {
         const data = await response.json();
 
         if (data.success) {
-            alert('✅ ' + data.message);
+            showAlert(data.message, 'success');
             closeModal('unlockModal');
             window.location.reload();
         } else {
-            alert('❌ ' + data.message);
+            showAlert(data.message, 'error');
         }
     } catch (error) {
-        alert('❌ Erro ao desbloquear OS: ' + error.message);
+        showAlert('Erro ao desbloquear OS: ' + error.message, 'error');
     }
 }
 
@@ -2370,7 +2413,7 @@ function printServiceOrder(order) {
     })
     .catch(error => {
         console.error('Erro ao buscar dados:', error);
-        alert('Erro ao carregar dados para impressão');
+        showAlert('Erro ao carregar dados para impressão', 'error');
     });
 }
 
@@ -2537,17 +2580,17 @@ function generateServiceOrderPrint(order, customer, warrantyTerms) {
     </div>
     ` : ''}
 
-    ${(order.checklist_lens || order.checklist_lens_condition || order.checklist_back_cover || order.checklist_screen || order.checklist_connector || order.checklist_camera_front_back || order.checklist_face_id || order.checklist_sim_card) ? `
+    ${(order.checklist_lens || order.checklist_back_cover || order.checklist_screen || order.checklist_connector || order.checklist_camera_front_back || order.checklist_face_id || order.checklist_sim_card) ? `
     <div class="section">
         <div class="section-title"><i class="fas fa-clipboard-check"></i> Checklist</div>
         <div class="checklist">
-            ${order.checklist_lens ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Possui Lente' + (order.checklist_lens_condition ? ': ' + order.checklist_lens_condition : '') + '</div>' : ''}
-            ${order.checklist_back_cover ? '<div class="checklist-item"><i class="fas fa-info-circle"></i> Tampa: ' + order.checklist_back_cover + '</div>' : ''}
+            ${order.checklist_lens ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Lente</div>' : ''}
             ${order.checklist_screen ? '<div class="checklist-item"><i class="fas fa-exclamation-triangle"></i> Tela Trincada</div>' : ''}
-            ${order.checklist_sim_card ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Possui Chip</div>' : ''}
+            ${order.checklist_sim_card ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Chip</div>' : ''}
+            ${order.checklist_back_cover ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Tampa Traseira</div>' : ''}
             ${order.checklist_face_id ? '<div class="checklist-item"><i class="fas fa-times-circle"></i> Sem Face ID</div>' : ''}
             ${order.checklist_connector ? '<div class="checklist-item"><i class="fas fa-check-circle"></i> Conector</div>' : ''}
-            ${order.checklist_camera_front_back ? '<div class="checklist-item"><i class="fas fa-camera"></i> Câmera: ' + order.checklist_camera_front_back + '</div>' : ''}
+            ${order.checklist_camera_front_back ? '<div class="checklist-item"><i class="fas fa-camera"></i> Câmera</div>' : ''}
         </div>
     </div>
     ` : ''}
@@ -2904,20 +2947,28 @@ function generateServiceOrderPrint(order, customer, warrantyTerms) {
     };
 }
 
-// Fechar modal ao clicar fora
+// Fechar ao clicar fora apenas para modais que não são OS
 window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
-        event.target.style.display = 'none';
+        const id = event.target.id;
+        if (id !== 'createModal' && id !== 'editModal') {
+            event.target.style.display = 'none';
+        }
     }
 }
 
-// Atalho ESC para fechar modal
+// ESC fecha apenas modais que não são OS
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        closeModal('createModal');
-        closeModal('editModal');
+        closeModal('unlockModal');
     }
 });
+
+function confirmCloseOS(id) {
+    showConfirm('Tem certeza que deseja fechar? As informações preenchidas serão perdidas.', 'Fechar', 'Fechar', 'Cancelar', 'warning').then(ok => {
+        if (ok) closeModal(id);
+    });
+}
 
 // Função para mudar registros por página
 function changePerPage(perPage) {
@@ -2955,7 +3006,118 @@ function removeOsImage(mode) {
     document.getElementById(mode + '_remove_os_image').value = '1';
     document.getElementById(mode + '_os_image_preview').style.display = 'none';
 }
+
+// ---- CADASTRO RÁPIDO DE CLIENTE ----
+let _quickCustomerContext = 'create'; // 'create' ou 'edit'
+
+function openQuickCustomerModal(e) {
+    e.preventDefault();
+    // Detecta contexto pelo modal aberto
+    const editOpen = document.getElementById('editModal').style.display === 'block';
+    _quickCustomerContext = editOpen ? 'edit' : 'create';
+    document.getElementById('quickCustomerForm').reset();
+    document.getElementById('quickCustomerError').style.display = 'none';
+    openModal('quickCustomerModal');
+}
+
+async function saveQuickCustomer(e) {
+    e.preventDefault();
+    const form = document.getElementById('quickCustomerForm');
+    const data = new FormData(form);
+    data.append('action', 'quick_add_customer');
+    const errEl = document.getElementById('quickCustomerError');
+    errEl.style.display = 'none';
+    try {
+        const resp = await fetch('', { method: 'POST', body: data });
+        const json = await resp.json();
+        if (!json.success) { errEl.textContent = json.error || 'Erro ao salvar.'; errEl.style.display = 'block'; return; }
+        // Preenche o campo de cliente no contexto certo
+        const searchId = _quickCustomerContext === 'edit' ? 'editCustomerSearch' : 'createCustomerSearch';
+        const hiddenId = _quickCustomerContext === 'edit' ? 'edit_customer_id' : 'createCustomerId';
+        document.getElementById(searchId).value = json.name + (json.cpf_cnpj ? ' — ' + json.cpf_cnpj : '') + (json.phone ? ' | ' + json.phone : '');
+        document.getElementById(hiddenId).value = json.id;
+        closeModal('quickCustomerModal');
+    } catch(err) { errEl.textContent = 'Erro de comunicação.'; errEl.style.display = 'block'; }
+}
 </script>
+
+<!-- Modal: Cadastro Rápido de Cliente -->
+<div id="quickCustomerModal" class="modal">
+    <div class="modal-content" style="max-width:600px;">
+        <div class="modal-header">
+            <h2><i class="fas fa-user-plus"></i> Novo Cliente</h2>
+            <button class="close" onclick="closeModal('quickCustomerModal')">&times;</button>
+        </div>
+        <form id="quickCustomerForm" onsubmit="saveQuickCustomer(event)">
+            <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                    <label>Nome Completo *</label>
+                    <input type="text" name="name" class="form-control" required placeholder="Nome completo do cliente">
+                </div>
+                <div class="form-group">
+                    <label>CPF/CNPJ</label>
+                    <input type="text" name="cpf_cnpj" class="form-control" placeholder="000.000.000-00">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" class="form-control" placeholder="email@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Data de Nascimento</label>
+                    <input type="date" name="birth_date" class="form-control">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                    <label>Endereço</label>
+                    <input type="text" name="address" class="form-control" placeholder="Rua, número, complemento">
+                </div>
+                <div class="form-group">
+                    <label>CEP</label>
+                    <input type="text" name="zipcode" class="form-control" placeholder="00000-000">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:2;">
+                    <label>Cidade</label>
+                    <input type="text" name="city" class="form-control" placeholder="Nome da cidade">
+                </div>
+                <div class="form-group">
+                    <label>Estado</label>
+                    <select name="state" class="form-control">
+                        <option value="">Selecione</option>
+                        <option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option>
+                        <option value="AM">AM</option><option value="BA">BA</option><option value="CE">CE</option>
+                        <option value="DF">DF</option><option value="ES">ES</option><option value="GO">GO</option>
+                        <option value="MA">MA</option><option value="MT">MT</option><option value="MS">MS</option>
+                        <option value="MG">MG</option><option value="PA">PA</option><option value="PB">PB</option>
+                        <option value="PR">PR</option><option value="PE">PE</option><option value="PI">PI</option>
+                        <option value="RJ">RJ</option><option value="RN">RN</option><option value="RS">RS</option>
+                        <option value="RO">RO</option><option value="RR">RR</option><option value="SC">SC</option>
+                        <option value="SP">SP</option><option value="SE">SE</option><option value="TO">TO</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1 1 100%;">
+                    <label>Observações</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
+                </div>
+            </div>
+            <div id="quickCustomerError" style="display:none;color:#e74c3c;margin-bottom:10px;"></div>
+            <div style="text-align:right;margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
+                <button type="button" class="btn btn-danger" onclick="closeModal('quickCustomerModal')"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 </body>
 </html>

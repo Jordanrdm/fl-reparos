@@ -76,12 +76,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         case 'get_all_products':
             try {
                 $stmt = $pdo->prepare("
-                    SELECT p.*, c.name as category_name 
-                    FROM products p 
-                    LEFT JOIN categories c ON p.category_id = c.id 
-                    WHERE p.active = 1 
-                    ORDER BY p.name ASC 
-                    LIMIT 50
+                    SELECT p.*, c.name as category_name
+                    FROM products p
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE p.active = 1
+                    ORDER BY p.name ASC
                 ");
                 $stmt->execute();
                 echo json_encode($stmt->fetchAll());
@@ -208,8 +207,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 }
 
                 $pdo->commit();
+                logActivity('create', 'sales', $sale_id,
+                    "Venda #$sale_id registrada — Total: " . formatMoney($final_amount) . ", Pagamento: $payment_description" . ($customer_name ? ", Cliente: $customer_name" : "")
+                );
                 echo json_encode(['success' => true, 'sale_id' => $sale_id]);
-                
+
             } catch (Exception $e) {
                 $pdo->rollback();
                 echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -818,12 +820,12 @@ try {
         .payment-form {
             background: #f8f9fa;
             border-radius: 10px;
-            padding: 10px;
+            padding: 14px;
             border: 2px solid #e0e0e0;
             transition: all 0.3s ease;
             width: 100%;
             box-sizing: border-box;
-            overflow: hidden; /* Garante que nada saia fora */
+            overflow: hidden;
         }
 
         .payment-form:focus-within {
@@ -842,22 +844,22 @@ try {
 
         .payment-method-select {
             flex: 2;
-            padding: 6px 8px;
+            padding: 10px 12px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             background: white;
-            font-size: 14px;
+            font-size: 15px;
             transition: border-color 0.3s ease;
         }
 
         .payment-amount-input {
             flex: 1;
-            min-width: 100px;
-            padding: 6px 8px;
+            min-width: 110px;
+            padding: 10px 12px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             text-align: right;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: bold;
             transition: border-color 0.3s ease;
         }
@@ -1309,6 +1311,68 @@ try {
         .toast-icon {
             font-size: 18px;
         }
+        /* Paginação de produtos - igual ao módulo Produtos */
+        .pagination-container {
+            background: rgba(255,255,255,0.9);
+            backdrop-filter: blur(10px);
+            padding: 10px 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            margin-top: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .pagination-info {
+            color: #666;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .pagination-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .pagination-buttons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .pagination-btn {
+            padding: 7px 13px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 13px;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+        .pagination-btn:hover:not(.disabled) {
+            background: linear-gradient(45deg,#667eea,#764ba2);
+            color: white;
+            border-color: transparent;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.3);
+        }
+        .pagination-btn.disabled {
+            background: #f5f5f5;
+            color: #ccc;
+            border-color: #f0f0f0;
+            cursor: not-allowed;
+        }
+        .page-info {
+            color: #666;
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
@@ -1450,7 +1514,7 @@ try {
                             </select>
                             <input type="number" id="multiPaymentAmount" class="payment-amount-input"
                                    placeholder="Digite o valor..." min="0.01" step="0.01"
-                                   style="text-align: center !important; padding: 6px 8px !important;">
+                                   style="text-align: center !important; padding: 10px 12px !important;">
                             <span id="installmentValueDisplay" style="display: none; color: #28a745; font-weight: 600; font-size: 12px; white-space: nowrap;"></span>
                         </div>
                         <div class="payment-hint">
@@ -1686,6 +1750,7 @@ try {
         </div>
     </div>
 
+    <script src="../../assets/js/main.js"></script>
     <script>
         // Estado do carrinho e pagamentos
         let cart = [];
@@ -2070,45 +2135,51 @@ try {
             const remaining = getRemainingAmount();
             // Validar apenas se o valor é negativo (pagar menos que zero)
             // Permitir valor maior para dar troco
+            const doAddPayment = () => {
+                // Adicionar pagamento
+                payments.push({
+                    method: method,
+                    amount: amount,
+                    installments: method === 'cartao_credito' ? installments : 1
+                });
+
+                // Limpar campos
+                amountInput.value = '';
+                installmentsSelect.value = '1';
+                installmentsSelect.style.display = 'none';
+                document.getElementById('installmentValueDisplay').style.display = 'none';
+                methodSelect.value = 'dinheiro'; // Resetar para dinheiro após adicionar
+
+                // Atualizar display
+                updatePaymentsList();
+                updatePaymentFormState();
+
+                // Mostrar alert
+                const methodName = getPaymentMethodName(method);
+                showAlert(`${methodName}: R$ ${amount.toFixed(2).replace('.', ',')} adicionado!`, 'success');
+
+                // Se ainda há valor restante, preencher próximo valor e focar
+                if (getRemainingAmount() > 0) {
+                    autoFillAmount();
+                    methodSelect.focus();
+                } else {
+                    // Se completou o pagamento, focar no botão finalizar
+                    document.getElementById('finalizeSale').focus();
+                    showAlert('✅ Pagamento completo! Pode finalizar a venda.', 'success');
+                }
+            };
+
             if (amount > remaining + 100.00 && payments.length > 0) {
                 // Avisar se estiver muito acima (possível erro de digitação)
-                const confirmed = confirm(`Você está adicionando R$ ${amount.toFixed(2).replace('.', ',')} mas o restante é R$ ${remaining.toFixed(2).replace('.', ',')}. Confirma?`);
-                if (!confirmed) {
-                    amountInput.focus();
-                    return;
-                }
-            }
-            
-            // Adicionar pagamento
-            payments.push({
-                method: method,
-                amount: amount,
-                installments: method === 'cartao_credito' ? installments : 1
-            });
-
-            // Limpar campos
-            amountInput.value = '';
-            installmentsSelect.value = '1';
-            installmentsSelect.style.display = 'none';
-            document.getElementById('installmentValueDisplay').style.display = 'none';
-            methodSelect.value = 'dinheiro'; // Resetar para dinheiro após adicionar
-
-            // Atualizar display
-            updatePaymentsList();
-            updatePaymentFormState();
-            
-            // Mostrar alert
-            const methodName = getPaymentMethodName(method);
-            showAlert(`${methodName}: R$ ${amount.toFixed(2).replace('.', ',')} adicionado!`, 'success');
-            
-            // Se ainda há valor restante, preencher próximo valor e focar
-            if (getRemainingAmount() > 0) {
-                autoFillAmount();
-                methodSelect.focus();
+                showConfirm(`Você está adicionando R$ ${amount.toFixed(2).replace('.', ',')} mas o restante é R$ ${remaining.toFixed(2).replace('.', ',')}. Confirma?`, 'Confirmar Valor', 'Confirmar', 'Cancelar', 'warning').then(confirmed => {
+                    if (confirmed) {
+                        doAddPayment();
+                    } else {
+                        amountInput.focus();
+                    }
+                });
             } else {
-                // Se completou o pagamento, focar no botão finalizar
-                document.getElementById('finalizeSale').focus();
-                showAlert('✅ Pagamento completo! Pode finalizar a venda.', 'success');
+                doAddPayment();
             }
         }
 
@@ -2325,23 +2396,35 @@ try {
             });
         }
 
+        let _pdvAllProducts = [];
+        let _pdvPage = 1;
+        const _pdvPageSize = 10;
+
         function displaySearchResults(products) {
+            _pdvAllProducts = products;
+            _pdvPage = 1;
+            _renderProductPage();
+        }
+
+        function _renderProductPage() {
             const resultsDiv = document.getElementById('searchResults');
-            
-            if (products.length === 0) {
+
+            if (_pdvAllProducts.length === 0) {
                 resultsDiv.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: #666;">
-                        <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 15px; display: block; color: #ccc;"></i>
+                    <div style="text-align:center;padding:40px;color:#666;">
+                        <i class="fas fa-exclamation-triangle" style="font-size:48px;margin-bottom:15px;display:block;color:#ccc;"></i>
                         Nenhum produto encontrado
-                    </div>
-                `;
+                    </div>`;
                 return;
             }
 
-            const html = products.map(product => {
-                const stockClass = product.stock_quantity <= 0 ? 'no-stock' : 
-                                 product.stock_quantity <= product.min_stock ? 'low-stock' : '';
-                
+            const totalPages = Math.ceil(_pdvAllProducts.length / _pdvPageSize);
+            const start = (_pdvPage - 1) * _pdvPageSize;
+            const pageProducts = _pdvAllProducts.slice(start, start + _pdvPageSize);
+
+            const cardsHtml = pageProducts.map(product => {
+                const stockClass = product.stock_quantity <= 0 ? 'no-stock' :
+                                   product.stock_quantity <= product.min_stock ? 'low-stock' : '';
                 return `
                     <div class="product-card ${stockClass}" onclick="addToCart(${JSON.stringify(product).replace(/"/g, '&quot;')})">
                         <div class="product-name">${product.name}</div>
@@ -2350,11 +2433,41 @@ try {
                             <span><strong>Preço:</strong> R$ ${parseFloat(product.sale_price).toFixed(2).replace('.', ',')}</span>
                             <span class="${stockClass}"><strong>Estoque:</strong> ${product.stock_quantity}</span>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             }).join('');
 
-            resultsDiv.innerHTML = html;
+            let paginHtml = '';
+            if (totalPages > 1) {
+                const start = (_pdvPage - 1) * _pdvPageSize + 1;
+                const end   = Math.min(_pdvPage * _pdvPageSize, _pdvAllProducts.length);
+                const prevBtn = _pdvPage > 1
+                    ? `<button class="pagination-btn" onclick="_pdvGoPage(${_pdvPage-1})"><i class="fas fa-chevron-left"></i> Anterior</button>`
+                    : `<span class="pagination-btn disabled"><i class="fas fa-chevron-left"></i> Anterior</span>`;
+                const nextBtn = _pdvPage < totalPages
+                    ? `<button class="pagination-btn" onclick="_pdvGoPage(${_pdvPage+1})">Próxima <i class="fas fa-chevron-right"></i></button>`
+                    : `<span class="pagination-btn disabled">Próxima <i class="fas fa-chevron-right"></i></span>`;
+                paginHtml = `
+                    <div class="pagination-container">
+                        <div class="pagination-info">Mostrando ${start} a ${end} de ${_pdvAllProducts.length} produtos</div>
+                        <div class="pagination-controls">
+                            <div class="pagination-buttons">
+                                ${prevBtn}
+                                <span class="page-info">Página ${_pdvPage} de ${totalPages}</span>
+                                ${nextBtn}
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            resultsDiv.innerHTML = cardsHtml + paginHtml;
+        }
+
+        function _pdvGoPage(page) {
+            const total = Math.ceil(_pdvAllProducts.length / _pdvPageSize);
+            if (page < 1 || page > total) return;
+            _pdvPage = page;
+            _renderProductPage();
+            document.getElementById('searchResults').scrollTop = 0;
         }
 
         function addToCart(product) {
@@ -3060,7 +3173,7 @@ try {
                 // Verificar se elementos existem
                 if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) {
                     console.error('Elementos do modal não encontrados');
-                    resolve(window.confirm(message)); // Fallback para confirm nativo
+                    showConfirm(message).then(resolve); // Fallback para confirm customizado
                     return;
                 }
                 

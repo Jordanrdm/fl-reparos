@@ -202,12 +202,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                     $_POST['description'] ?? '',
                     isset($_POST['allow_price_edit']) ? 1 : 0
                 ]);
+                $newProductId = $pdo->lastInsertId();
+                $label = $type === 'service' ? 'Serviço' : 'Produto';
+                logActivity('create', 'products', $newProductId,
+                    "$label '{$_POST['name']}' criado — Preço: " . formatMoney($salePrice ?? 0) . ", Estoque: " . ($type === 'service' ? '∞' : ($_POST['stock_quantity'] ?? 0))
+                );
                 $message = $type === 'service' ? '✓ Serviço criado com sucesso!' : '✓ Produto criado com sucesso!';
                 $message_type = 'success';
                 break;
 
             case 'edit':
                 if (!$canEdit) throw new Exception('Sem permissão para editar');
+
+                // Buscar dados atuais para o log
+                $oldProduct = $pdo->prepare("SELECT name, cost_price, sale_price, stock_quantity, unit, category_id FROM products WHERE id=?");
+                $oldProduct->execute([$_POST['id']]);
+                $oldProductData = $oldProduct->fetch(PDO::FETCH_ASSOC);
 
                 $barcode = $_POST['barcode'] ?? '';
                 $code = !empty($_POST['code']) ? $_POST['code'] : $barcode;
@@ -281,6 +291,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                 $checkType = $pdo->prepare("SELECT type FROM products WHERE id=?");
                 $checkType->execute([$_POST['id']]);
                 $itemType = $checkType->fetchColumn() ?: 'product';
+                // Log de edição com diff
+                $newName = $_POST['name'];
+                $newValues = ['nome' => $newName, 'preço_custo' => formatMoney($costPrice), 'preço_venda' => formatMoney($salePrice), 'estoque' => $_POST['stock_quantity'] ?? 0];
+                $oldValues = $oldProductData ? ['nome' => $oldProductData['name'], 'preço_custo' => formatMoney($oldProductData['cost_price']), 'preço_venda' => formatMoney($oldProductData['sale_price']), 'estoque' => $oldProductData['stock_quantity']] : null;
+                $label = $itemType === 'service' ? 'Serviço' : 'Produto';
+                logActivity('update', 'products', (int)$_POST['id'],
+                    "$label '$newName' editado", $oldValues, $newValues
+                );
                 $message = $itemType === 'service' ? '✓ Serviço atualizado com sucesso!' : '✓ Produto atualizado com sucesso!';
                 $message_type = 'success';
                 break;
@@ -288,8 +306,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
             case 'delete':
                 if (!$canDelete) throw new Exception('Sem permissão para excluir');
 
+                // Buscar nome antes de excluir
+                $delProduct = $pdo->prepare("SELECT name, type FROM products WHERE id=?");
+                $delProduct->execute([$_POST['id']]);
+                $delProductData = $delProduct->fetch(PDO::FETCH_ASSOC);
                 $stmt = $pdo->prepare("UPDATE products SET active=0, updated_at=NOW() WHERE id=?");
                 $stmt->execute([$_POST['id']]);
+                $delLabel = ($delProductData['type'] ?? 'product') === 'service' ? 'Serviço' : 'Produto';
+                logActivity('delete', 'products', (int)$_POST['id'],
+                    "$delLabel '{$delProductData['name']}' excluído"
+                );
                 $message = '✓ Produto excluído com sucesso!';
                 $message_type = 'success';
                 break;
@@ -1176,6 +1202,7 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
         <input type="hidden" name="id" id="delete_id">
     </form>
 
+    <script src="../../assets/js/main.js"></script>
     <script>
         function openModal(id) {
             document.getElementById(id).style.display = 'block';
@@ -1354,10 +1381,11 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
         }
 
         function deleteProduct(id) {
-            if (confirm('Tem certeza que deseja excluir este produto?')) {
+            showConfirm('Tem certeza que deseja excluir este produto?', 'Excluir', 'Excluir', 'Cancelar', 'danger').then(ok => {
+                if (!ok) return;
                 document.getElementById('delete_id').value = id;
                 document.getElementById('deleteForm').submit();
-            }
+            });
         }
 
         // Fechar modal ao clicar fora

@@ -49,11 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
         }
 
         $conn->commit();
-        echo "<script>alert('Despesa cadastrada com sucesso!');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Despesa cadastrada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
         $conn->rollBack();
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -124,11 +124,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
         }
 
         $conn->commit();
-        echo "<script>alert('Despesa atualizada com sucesso!');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Despesa atualizada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
         $conn->rollBack();
-        echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao atualizar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -140,12 +140,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $checkStmt->execute([$id]);
     $expenseOwner = $checkStmt->fetch(PDO::FETCH_ASSOC);
     if (($_SESSION['user_role'] ?? '') !== 'admin' && $expenseOwner['user_id'] != $_SESSION['user_id']) {
-        echo "<script>alert('Sem permissão para excluir esta despesa');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Sem permissão para excluir esta despesa',type:'error'}));window.location='index.php';</script>";
         exit;
     }
     $stmt = $conn->prepare("DELETE FROM expenses WHERE id = ?");
     $stmt->execute([$id]);
-    echo "<script>alert('Despesa excluída com sucesso!');window.location='index.php';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Despesa excluída com sucesso!',type:'success'}));window.location='index.php';</script>";
     exit;
 }
 
@@ -446,10 +446,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <button class="btn btn-secondary btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Editar">
                         <i class="fas fa-edit"></i>
                     </button>
-                    <form method="POST" onsubmit="return confirm('Excluir esta despesa?');" style="display:inline;">
+                    <form method="POST" onsubmit="return false;" style="display:inline;" id="deleteExpForm_<?= $row['id'] ?>">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                        <button type="submit" class="btn btn-danger btn-sm" title="Excluir"><i class="fas fa-trash-alt"></i></button>
+                        <button type="button" class="btn btn-danger btn-sm" title="Excluir" onclick="showConfirm('Excluir esta despesa?','Excluir','Excluir','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteExpForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                     </form>
                 </td>
             </tr>
@@ -613,6 +613,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 </div>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}

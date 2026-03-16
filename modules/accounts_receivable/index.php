@@ -27,10 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             !empty($_POST['payment_date']) ? $_POST['payment_date'] : null,
             $_POST['status'] ?? 'pending'
         ]);
-        echo "<script>alert('Conta cadastrada com sucesso!');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Conta cadastrada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao cadastrar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -49,10 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['status'],
             $_POST['id']
         ]);
-        echo "<script>alert('Conta atualizada com sucesso!');window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Conta atualizada com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
     } catch (PDOException $e) {
-        echo "<script>alert('Erro ao atualizar: " . $e->getMessage() . "');</script>";
+        echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao atualizar: " . addslashes($e->getMessage()) . "','error'); });</script>";
     }
 }
 
@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
     $id = (int) $_POST['id'];
     $stmt = $conn->prepare("DELETE FROM accounts_receivable WHERE id = ?");
     $stmt->execute([$id]);
-    echo "<script>alert('Conta excluída com sucesso!');window.location='index.php';</script>";
+    echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Conta excluída com sucesso!',type:'success'}));window.location='index.php';</script>";
     exit;
 }
 
@@ -202,10 +202,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <td><span class="badge <?= $row['status'] ?>"><?= traduzirStatus($row['status']) ?></span></td>
                 <td>
                     <button class="btn btn-secondary btn-sm" onclick='openEditModal(<?= json_encode($row) ?>)'><i class="fas fa-edit"></i></button>
-                    <form method="POST" onsubmit="return confirm('Excluir esta conta?');" style="display:inline;">
+                    <form method="POST" onsubmit="return false;" style="display:inline;" id="deleteAccForm_<?= $row['id'] ?>">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                        <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="showConfirm('Excluir esta conta?','Excluir','Excluir','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteAccForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                     </form>
                 </td>
             </tr>
@@ -327,6 +327,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 </div>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 function openModal(id){document.getElementById(id).style.display='block';}
 function closeModal(id){document.getElementById(id).style.display='none';}

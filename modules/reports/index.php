@@ -8,18 +8,26 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once('../../config/database.php');
 require_once('../../config/permissions.php');
+require_once('../../config/app.php');
 $conn = $database->getConnection();
 
 // Ação: Deletar venda (somente admin)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_sale' && isAdmin()) {
     try {
         $saleId = (int)$_POST['sale_id'];
+        // Buscar dados da venda para o log
+        $stmtSaleLog = $conn->prepare("SELECT s.final_amount, s.payment_method, COALESCE(c.name, CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE 'Consumidor Final' END) as customer_name FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.id = ?");
+        $stmtSaleLog->execute([$saleId]);
+        $saleDataLog = $stmtSaleLog->fetch(PDO::FETCH_ASSOC);
         // Deletar itens da venda
         $conn->prepare("DELETE FROM sale_items WHERE sale_id = ?")->execute([$saleId]);
         // Deletar registro do cash_flow
         $conn->prepare("DELETE FROM cash_flow WHERE reference_type = 'sale' AND reference_id = ?")->execute([$saleId]);
         // Deletar a venda
         $conn->prepare("DELETE FROM sales WHERE id = ?")->execute([$saleId]);
+        logActivity('delete', 'sales', $saleId,
+            "Venda #$saleId excluída — Total: " . formatMoney($saleDataLog['final_amount'] ?? 0) . ", Cliente: " . ($saleDataLog['customer_name'] ?? '?') . ", Pagamento: " . ($saleDataLog['payment_method'] ?? '?')
+        );
 
         // Redirecionar mantendo os filtros
         $redirectUrl = "index.php?type=sales&date_from=" . urlencode($_POST['date_from'] ?? date('Y-m-01')) .
@@ -337,10 +345,6 @@ function buildPaginationUrl($page, $perPage, $reportType, $dateFrom, $dateTo) {
            "&date_to=" . urlencode($dateTo) .
            "&page=" . $page .
            "&per_page=" . $perPage;
-}
-
-function formatDate($date) {
-    return date('d/m/Y', strtotime($date));
 }
 
 function formatDateTime($datetime) {
@@ -800,12 +804,12 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <td><strong>R$ <?= number_format($row['final_amount'], 2, ',', '.') ?></strong></td>
                         <?php if(isAdmin()): ?>
                         <td>
-                            <form method="POST" style="display:inline;" onsubmit="return confirm('Tem certeza que deseja DELETAR a venda #<?= $row['id'] ?>?\nEssa ação não pode ser desfeita!');">
+                            <form method="POST" style="display:inline;" onsubmit="return false;" id="deleteSaleForm_<?= $row['id'] ?>">
                                 <input type="hidden" name="action" value="delete_sale">
                                 <input type="hidden" name="sale_id" value="<?= $row['id'] ?>">
                                 <input type="hidden" name="date_from" value="<?= $date_from ?>">
                                 <input type="hidden" name="date_to" value="<?= $date_to ?>">
-                                <button type="submit" class="btn btn-danger btn-sm" title="Deletar venda"><i class="fas fa-trash-alt"></i></button>
+                                <button type="button" class="btn btn-danger btn-sm" title="Deletar venda" onclick="showConfirm('Tem certeza que deseja DELETAR a venda #<?= $row['id'] ?>? Essa ação não pode ser desfeita!','Deletar Venda','Deletar','Cancelar','danger').then(ok=>{if(ok)document.getElementById('deleteSaleForm_<?= $row['id'] ?>').submit();})"><i class="fas fa-trash-alt"></i></button>
                             </form>
                         </td>
                         <?php endif; ?>
@@ -1201,6 +1205,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
     <i class="fas fa-print"></i>
 </button>
 
+<script src="../../assets/js/main.js"></script>
 <script>
 function changePerPage(perPage, reportType, dateFrom, dateTo) {
     window.location.href = '?type=' + encodeURIComponent(reportType) +
