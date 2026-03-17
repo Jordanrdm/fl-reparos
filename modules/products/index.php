@@ -215,7 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                 if (!$canEdit) throw new Exception('Sem permissão para editar');
 
                 // Buscar dados atuais para o log
-                $oldProduct = $pdo->prepare("SELECT name, cost_price, sale_price, stock_quantity, unit, category_id FROM products WHERE id=?");
+                $oldProduct = $pdo->prepare("SELECT name, cost_price, sale_price, stock_quantity, unit, category_id, allow_price_edit FROM products WHERE id=?");
                 $oldProduct->execute([$_POST['id']]);
                 $oldProductData = $oldProduct->fetch(PDO::FETCH_ASSOC);
 
@@ -293,8 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                 $itemType = $checkType->fetchColumn() ?: 'product';
                 // Log de edição com diff
                 $newName = $_POST['name'];
-                $newValues = ['nome' => $newName, 'preço_custo' => formatMoney($costPrice), 'preço_venda' => formatMoney($salePrice), 'estoque' => $_POST['stock_quantity'] ?? 0];
-                $oldValues = $oldProductData ? ['nome' => $oldProductData['name'], 'preço_custo' => formatMoney($oldProductData['cost_price']), 'preço_venda' => formatMoney($oldProductData['sale_price']), 'estoque' => $oldProductData['stock_quantity']] : null;
+                $allowEdit = isset($_POST['allow_price_edit']) ? 1 : 0;
+                $newValues = ['nome' => $newName, 'preço_custo' => formatMoney($costPrice), 'preço_venda' => formatMoney($salePrice), 'estoque' => $_POST['stock_quantity'] ?? 0, 'editar_preço_na_OS' => $allowEdit ? 'Sim' : 'Não'];
+                $oldValues = $oldProductData ? ['nome' => $oldProductData['name'], 'preço_custo' => formatMoney($oldProductData['cost_price']), 'preço_venda' => formatMoney($oldProductData['sale_price']), 'estoque' => $oldProductData['stock_quantity'], 'editar_preço_na_OS' => ($oldProductData['allow_price_edit'] ?? 1) ? 'Sim' : 'Não'] : null;
                 $label = $itemType === 'service' ? 'Serviço' : 'Produto';
                 logActivity('update', 'products', (int)$_POST['id'],
                     "$label '$newName' editado", $oldValues, $newValues

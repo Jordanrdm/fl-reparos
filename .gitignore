@@ -23,6 +23,8 @@ modules/service_orders/delete..php
 # Logs
 logs/
 *.log
+!modules/logs/
+!modules/logs/**
 
 # Sistema operacional
 .DS_Store

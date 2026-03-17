@@ -47,7 +47,7 @@
                     break;
                 case 'F5':
                     e.preventDefault();
-                    window.location.href = '<?php echo APP_URL; ?>/modules/service-orders/';
+                    window.location.href = '<?php echo APP_URL; ?>/modules/service_orders/';
                     break;
             }
         });

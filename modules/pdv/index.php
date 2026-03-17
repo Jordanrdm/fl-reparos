@@ -207,8 +207,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 }
 
                 $pdo->commit();
+                $logNewValues = [
+                    'Cliente'      => $customer_name ?: 'Consumidor Final',
+                    'Total bruto'  => 'R$ ' . number_format($total_amount, 2, ',', '.'),
+                    'Desconto'     => 'R$ ' . number_format($discount, 2, ',', '.'),
+                    'Total final'  => 'R$ ' . number_format($final_amount, 2, ',', '.'),
+                    'Pagamento'    => $payment_description,
+                    'Qtd. itens'   => count($items),
+                ];
                 logActivity('create', 'sales', $sale_id,
-                    "Venda #$sale_id registrada — Total: " . formatMoney($final_amount) . ", Pagamento: $payment_description" . ($customer_name ? ", Cliente: $customer_name" : "")
+                    "Venda #$sale_id registrada — Total: " . formatMoney($final_amount) . ", Pagamento: $payment_description" . ($customer_name ? ", Cliente: $customer_name" : ""),
+                    null, $logNewValues
                 );
                 echo json_encode(['success' => true, 'sale_id' => $sale_id]);
 
@@ -320,6 +329,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
                 $pdo->prepare("DELETE FROM sales WHERE id = ?")->execute([$sale_id]);
 
                 $pdo->commit();
+                $logOldValues = [
+                    'Cliente'     => $saleData['customer_name'] ?? 'Consumidor Final',
+                    'Vendedor'    => $saleData['seller_name'] ?? '—',
+                    'Total bruto' => 'R$ ' . number_format($saleData['total_amount'] ?? 0, 2, ',', '.'),
+                    'Desconto'    => 'R$ ' . number_format($saleData['discount'] ?? 0, 2, ',', '.'),
+                    'Total final' => 'R$ ' . number_format($saleData['final_amount'] ?? 0, 2, ',', '.'),
+                    'Pagamento'   => $saleData['payment_method'] ?? '—',
+                    'Itens'       => implode('; ', array_map(fn($i) => ($i['product_name'] ?? 'Produto') . ' x' . $i['quantity'], $itemsLog)),
+                ];
+                logActivity('delete', 'sales', $sale_id,
+                    "Venda #$sale_id excluída — Total: " . formatMoney($saleData['final_amount'] ?? 0) . ", Cliente: " . ($saleData['customer_name'] ?? '?') . ", Pagamento: " . ($saleData['payment_method'] ?? '?'),
+                    $logOldValues
+                );
                 echo json_encode(['success' => true]);
             } catch (Exception $e) {
                 $pdo->rollback();

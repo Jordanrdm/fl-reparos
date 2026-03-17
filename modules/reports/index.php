@@ -16,17 +16,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     try {
         $saleId = (int)$_POST['sale_id'];
         // Buscar dados da venda para o log
-        $stmtSaleLog = $conn->prepare("SELECT s.final_amount, s.payment_method, COALESCE(c.name, CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE 'Consumidor Final' END) as customer_name FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.id = ?");
+        $stmtSaleLog = $conn->prepare("SELECT s.*, u.name as seller_name, COALESCE(c.name, CASE WHEN s.notes LIKE 'Cliente:%' THEN TRIM(SUBSTRING(s.notes, 9)) ELSE 'Consumidor Final' END) as customer_name FROM sales s LEFT JOIN customers c ON c.id = s.customer_id LEFT JOIN users u ON u.id = s.user_id WHERE s.id = ?");
         $stmtSaleLog->execute([$saleId]);
         $saleDataLog = $stmtSaleLog->fetch(PDO::FETCH_ASSOC);
+        // Buscar itens para o log
+        $stmtItems = $conn->prepare("SELECT si.quantity, p.name as product_name FROM sale_items si LEFT JOIN products p ON p.id = si.product_id WHERE si.sale_id = ?");
+        $stmtItems->execute([$saleId]);
+        $itemsLog = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
         // Deletar itens da venda
         $conn->prepare("DELETE FROM sale_items WHERE sale_id = ?")->execute([$saleId]);
         // Deletar registro do cash_flow
         $conn->prepare("DELETE FROM cash_flow WHERE reference_type = 'sale' AND reference_id = ?")->execute([$saleId]);
         // Deletar a venda
         $conn->prepare("DELETE FROM sales WHERE id = ?")->execute([$saleId]);
+        $logOldValues = [
+            'Cliente'     => $saleDataLog['customer_name'] ?? 'Consumidor Final',
+            'Vendedor'    => $saleDataLog['seller_name'] ?? '—',
+            'Total bruto' => 'R$ ' . number_format($saleDataLog['total_amount'] ?? 0, 2, ',', '.'),
+            'Desconto'    => 'R$ ' . number_format($saleDataLog['discount'] ?? 0, 2, ',', '.'),
+            'Total final' => 'R$ ' . number_format($saleDataLog['final_amount'] ?? 0, 2, ',', '.'),
+            'Pagamento'   => $saleDataLog['payment_method'] ?? '—',
+            'Itens'       => implode('; ', array_map(fn($i) => ($i['product_name'] ?? 'Produto') . ' x' . $i['quantity'], $itemsLog)),
+        ];
         logActivity('delete', 'sales', $saleId,
-            "Venda #$saleId excluída — Total: " . formatMoney($saleDataLog['final_amount'] ?? 0) . ", Cliente: " . ($saleDataLog['customer_name'] ?? '?') . ", Pagamento: " . ($saleDataLog['payment_method'] ?? '?')
+            "Venda #$saleId excluída — Total: " . formatMoney($saleDataLog['final_amount'] ?? 0) . ", Cliente: " . ($saleDataLog['customer_name'] ?? '?') . ", Pagamento: " . ($saleDataLog['payment_method'] ?? '?'),
+            $logOldValues
         );
 
         // Redirecionar mantendo os filtros

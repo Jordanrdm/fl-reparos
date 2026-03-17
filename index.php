@@ -66,60 +66,6 @@ try {
     $totalCustomers = 0;
 }
 
-// Ação: Zerar vendas de hoje (somente admin)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'reset_today_sales' && isAdmin()) {
-        try {
-            $today = date('Y-m-d');
-            // Deletar itens das vendas de hoje
-            $database->query(
-                "DELETE si FROM sale_items si
-                 INNER JOIN sales s ON si.sale_id = s.id
-                 WHERE DATE(s.created_at) = ?",
-                [$today]
-            );
-            // Deletar registros de cash_flow referentes a vendas de hoje
-            $database->query(
-                "DELETE FROM cash_flow
-                 WHERE reference_type = 'sale'
-                 AND reference_id IN (SELECT id FROM sales WHERE DATE(created_at) = ?)",
-                [$today]
-            );
-            // Deletar vendas de hoje
-            $database->query("DELETE FROM sales WHERE DATE(created_at) = ?", [$today]);
-
-            // Recalcular valores
-            $todaySales = 0;
-            header('Location: index.php?msg=sales_reset');
-            exit;
-        } catch (Exception $e) {
-            $flashError = 'Erro ao zerar vendas: ' . $e->getMessage();
-        }
-    }
-
-    if ($_POST['action'] === 'reset_today_cash' && isAdmin()) {
-        try {
-            $today = date('Y-m-d');
-            // Deletar movimentações de caixa de hoje (exceto abertura/fechamento)
-            $database->query(
-                "DELETE FROM cash_flow
-                 WHERE DATE(created_at) = ?
-                 AND type NOT IN ('opening', 'closing')",
-                [$today]
-            );
-
-            $currentCash = 0;
-            header('Location: index.php?msg=cash_reset');
-            exit;
-        } catch (Exception $e) {
-            $flashError = 'Erro ao zerar caixa: ' . $e->getMessage();
-        }
-    }
-}
-if (!empty($flashError)) {
-    echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('" . addslashes($flashError) . "','error'); });</script>";
-}
-
 $pageTitle = 'Dashboard';
 $pageCSS = 'dashboard';
 $pageJS = 'dashboard';
@@ -128,16 +74,6 @@ include 'includes/header.php';
 ?>
 
 <div class="container">
-    <?php if(isset($_GET['msg'])): ?>
-        <div class="alert alert-success" style="margin-bottom:20px;padding:15px;border-radius:10px;">
-            <i class="fas fa-check-circle"></i>
-            <?php if($_GET['msg'] === 'sales_reset'): ?>
-                Vendas de hoje foram zeradas com sucesso!
-            <?php elseif($_GET['msg'] === 'cash_reset'): ?>
-                Caixa de hoje foi zerado com sucesso!
-            <?php endif; ?>
-        </div>
-    <?php endif; ?>
 
     <!-- Header do Dashboard -->
     <div class="dashboard-header">
@@ -154,15 +90,12 @@ include 'includes/header.php';
             <div class="stat-value" id="val-sales"><?php echo formatMoney($todaySales); ?></div>
             <div class="stat-label" style="display:flex;align-items:center;justify-content:center;gap:6px;">
                 Vendas Hoje
-                <button onclick="toggleValue('sales','<?php echo addslashes(formatMoney($todaySales)); ?>')" id="eye-sales" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
+                <button onclick="toggleValue('sales')" id="eye-sales" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
             </div>
-            <?php if(isAdmin() && $todaySales > 0): ?>
-                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return false;" id="resetSalesForm">
-                    <input type="hidden" name="action" value="reset_today_sales">
-                    <button type="button" title="Zerar vendas de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;" onclick="showConfirm('Tem certeza que deseja ZERAR todas as vendas de hoje? Essa ação não pode ser desfeita!','Zerar Vendas','Zerar','Cancelar','danger').then(ok=>{if(ok)document.getElementById(\'resetSalesForm\').submit();})">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                </form>
+            <?php if(isAdmin()): ?>
+                <button type="button" id="btn-zero-sales" title="Zerar exibição de vendas de hoje" onclick="zeroDisplay('sales')" style="position:absolute;top:10px;right:10px;background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
             <?php endif; ?>
         </div>
 
@@ -173,7 +106,7 @@ include 'includes/header.php';
             <div class="stat-value" id="val-cash"><?php echo formatMoney($currentCash); ?></div>
             <div class="stat-label" style="display:flex;align-items:center;justify-content:center;gap:6px;">
                 Caixa Atual
-                <button onclick="toggleValue('cash','<?php echo addslashes(formatMoney($currentCash)); ?>')" id="eye-cash" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
+                <button onclick="toggleValue('cash')" id="eye-cash" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
             </div>
             <?php
             $caixaStatus = $cashRegister['status'] ?? null;
@@ -186,13 +119,10 @@ include 'includes/header.php';
                     <i class="fas <?= $caixaIcon ?>"></i> <?= $caixaLabel ?>
                 </span>
             </div>
-            <?php if(isAdmin() && $currentCash != 0): ?>
-                <form method="POST" style="position:absolute;top:10px;right:10px;" onsubmit="return false;" id="resetCashForm">
-                    <input type="hidden" name="action" value="reset_today_cash">
-                    <button type="button" title="Zerar caixa de hoje" style="background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;" onclick="showConfirm('Tem certeza que deseja ZERAR o caixa de hoje? Essa ação não pode ser desfeita!','Zerar Caixa','Zerar','Cancelar','danger').then(ok=>{if(ok)document.getElementById(\'resetCashForm\').submit();})">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                </form>
+            <?php if(isAdmin()): ?>
+                <button type="button" id="btn-zero-cash" title="Zerar exibição do caixa atual" onclick="zeroDisplay('cash')" style="position:absolute;top:10px;right:10px;background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
             <?php endif; ?>
         </div>
         
@@ -330,8 +260,12 @@ include 'includes/header.php';
 
 <script>
 const _hidden = {};
+const _realValues = {
+    sales: '<?= addslashes(formatMoney($todaySales)) ?>',
+    cash:  '<?= addslashes(formatMoney($currentCash)) ?>'
+};
 
-function toggleValue(key, realValue) {
+function toggleValue(key) {
     const valEl = document.getElementById('val-' + key);
     const eyeEl = document.getElementById('eye-' + key);
     if (!valEl || !eyeEl) return;
@@ -343,28 +277,61 @@ function toggleValue(key, realValue) {
         valEl.style.letterSpacing = '4px';
         eyeEl.innerHTML = '<i class="fas fa-eye-slash"></i>';
     } else {
-        valEl.textContent = realValue;
+        valEl.textContent = _realValues[key];
         valEl.style.letterSpacing = '';
         eyeEl.innerHTML = '<i class="fas fa-eye"></i>';
     }
-
-    // Persistir preferência na sessão do browser
     try { sessionStorage.setItem('fl_hide_' + key, _hidden[key] ? '1' : '0'); } catch(e) {}
+}
+
+function zeroDisplay(key) {
+    const labels = { sales: 'Vendas de Hoje', cash: 'Caixa Atual' };
+    showConfirm(
+        'Deseja zerar a exibição de <strong>' + labels[key] + '</strong> no dashboard?\n\nOs registros reais permanecem inalterados.',
+        'Zerar exibição',
+        'Zerar', 'Cancelar', 'danger'
+    ).then(ok => {
+        if (!ok) return;
+        _realValues[key] = 'R$ 0,00';
+        _hidden[key] = false;
+        try { sessionStorage.setItem('fl_zero_' + key, '1'); sessionStorage.removeItem('fl_hide_' + key); } catch(e) {}
+        const valEl = document.getElementById('val-' + key);
+        const eyeEl = document.getElementById('eye-' + key);
+        if (valEl) { valEl.textContent = 'R$ 0,00'; valEl.style.letterSpacing = ''; }
+        if (eyeEl) { eyeEl.innerHTML = '<i class="fas fa-eye"></i>'; }
+        showAlert(labels[key] + ' zerado no dashboard.', 'success');
+    });
 }
 
 // Restaurar estado ao carregar
 document.addEventListener('DOMContentLoaded', function() {
+    // Limpar zeros de dias anteriores
+    const today = '<?= date('Y-m-d') ?>';
+    try {
+        if (sessionStorage.getItem('fl_zero_date') !== today) {
+            sessionStorage.removeItem('fl_zero_sales');
+            sessionStorage.removeItem('fl_zero_cash');
+            sessionStorage.setItem('fl_zero_date', today);
+        }
+    } catch(e) {}
+
     ['sales','cash'].forEach(function(key) {
         try {
-            if (sessionStorage.getItem('fl_hide_' + key) === '1') {
-                const valEl = document.getElementById('val-' + key);
-                const eyeEl = document.getElementById('eye-' + key);
-                if (valEl && eyeEl) {
-                    _hidden[key] = true;
-                    valEl.textContent = '••••••';
-                    valEl.style.letterSpacing = '4px';
-                    eyeEl.innerHTML = '<i class="fas fa-eye-slash"></i>';
-                }
+            const zeroed = sessionStorage.getItem('fl_zero_' + key) === '1';
+            const hidden = sessionStorage.getItem('fl_hide_' + key) === '1';
+            const valEl = document.getElementById('val-' + key);
+            const eyeEl = document.getElementById('eye-' + key);
+            if (!valEl || !eyeEl) return;
+            if (zeroed) {
+                _realValues[key] = 'R$ 0,00';
+                valEl.textContent = 'R$ 0,00';
+                valEl.style.letterSpacing = '';
+                eyeEl.innerHTML = '<i class="fas fa-eye"></i>';
+            } else if (hidden) {
+                _hidden[key] = true;
+                valEl.textContent = '••••••';
+                valEl.style.letterSpacing = '4px';
+                eyeEl.innerHTML = '<i class="fas fa-eye-slash"></i>';
             }
         } catch(e) {}
     });
