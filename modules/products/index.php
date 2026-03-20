@@ -204,8 +204,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($canEdit || $canCreate)) {
                 ]);
                 $newProductId = $pdo->lastInsertId();
                 $label = $type === 'service' ? 'Serviço' : 'Produto';
+                $logNewProduct = [
+                    'Nome'       => $_POST['name'],
+                    'Tipo'       => $label,
+                    'Preço'      => formatMoney($salePrice ?? 0),
+                    'P. Custo'   => formatMoney($costPrice ?? 0),
+                    'Estoque'    => $type === 'service' ? '∞' : ($_POST['stock_quantity'] ?? 0),
+                    'Categoria'  => $_POST['category_id'] ?? '',
+                    'Fornecedor' => $_POST['supplier'] ?? '',
+                ];
                 logActivity('create', 'products', $newProductId,
-                    "$label '{$_POST['name']}' criado — Preço: " . formatMoney($salePrice ?? 0) . ", Estoque: " . ($type === 'service' ? '∞' : ($_POST['stock_quantity'] ?? 0))
+                    "$label '{$_POST['name']}' criado — Preço: " . formatMoney($salePrice ?? 0) . ", Estoque: " . ($type === 'service' ? '∞' : ($_POST['stock_quantity'] ?? 0)),
+                    null, $logNewProduct
                 );
                 $message = $type === 'service' ? '✓ Serviço criado com sucesso!' : '✓ Produto criado com sucesso!';
                 $message_type = 'success';
@@ -459,10 +469,11 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
         .stat-card.purple .icon {color:#9C27B0;}
 
         /* Filtros */
-        .filters-form {display:flex;gap:15px;align-items:flex-end;flex-wrap:wrap;}
+        .filters-form {display:flex;align-items:flex-end;flex-wrap:wrap;}
         .filter-group {flex:1;min-width:200px;}
+        .filter-group + .filter-group {margin-left:30px;}
         .filter-group label {display:block;margin-bottom:8px;font-weight:600;color:#666;font-size:0.9rem;}
-        .filter-actions {display:flex;gap:10px;}
+        .filter-actions {display:flex;gap:10px;margin-left:30px;}
 
         /* Tabela */
         .table {
@@ -495,12 +506,13 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
 
         /* Modal */
         .modal {display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:1000;backdrop-filter:blur(5px);}
-        .modal-content {background:white;width:90%;max-width:600px;margin:50px auto;border-radius:15px;box-shadow:0 10px 40px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;}
+        .modal-content {background:white;width:96%;max-width:1100px;margin:20px auto;border-radius:15px;box-shadow:0 10px 40px rgba(0,0,0,0.3);max-height:96vh;overflow-y:auto;}
         .modal-header {padding:20px 30px;border-bottom:2px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;}
         .modal-header h2 {margin:0;color:#333;font-size:1.5rem;}
         .btn-close {background:none;border:none;font-size:2rem;cursor:pointer;color:#999;}
         .modal-form {padding:30px;}
-        .form-row {display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;}
+        .form-row {display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:15px;}
+        .form-row-2 {display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:15px;}
         .form-group {margin-bottom:20px;}
         .form-group label {display:block;margin-bottom:8px;font-weight:600;color:#666;}
         .form-control {width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:1rem;}
@@ -838,104 +850,108 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
                 <input type="hidden" name="action" value="add">
                 <input type="hidden" name="type" id="create_type" value="product">
 
-                <!-- Foto do Produto -->
-                <div class="form-group" style="text-align:center; margin-bottom:15px;">
-                    <div id="create_image_preview" style="width:120px;height:120px;margin:0 auto 10px;border-radius:10px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;cursor:pointer;" onclick="document.getElementById('create_image_input').click()">
-                        <span style="color:#aaa;font-size:13px;"><i class="fas fa-camera" style="font-size:24px;display:block;margin-bottom:5px;"></i>Adicionar foto</span>
+                <!-- Layout: foto à esquerda + campos à direita -->
+                <div style="display:flex;gap:30px;align-items:flex-start;margin-bottom:15px;">
+                    <!-- Foto -->
+                    <div style="flex:0 0 120px;text-align:center;">
+                        <div id="create_image_preview" style="width:120px;height:120px;border-radius:10px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;cursor:pointer;" onclick="document.getElementById('create_image_input').click()">
+                            <span style="color:#aaa;font-size:13px;"><i class="fas fa-camera" style="font-size:24px;display:block;margin-bottom:5px;"></i>Adicionar foto</span>
+                        </div>
+                        <input type="file" name="image" id="create_image_input" accept="image/*" style="display:none;" onchange="previewImage(this, 'create_image_preview')">
                     </div>
-                    <input type="file" name="image" id="create_image_input" accept="image/*" style="display:none;" onchange="previewImage(this, 'create_image_preview')">
+                    <!-- Campos lado direito -->
+                    <div style="flex:1;">
+                        <!-- Linha 1: Nome | Código de Barras | Categoria -->
+                        <div class="form-row" style="margin-bottom:15px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Nome *</label>
+                                <input type="text" name="name" class="form-control" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Código de Barras *</label>
+                                <input type="text" name="barcode" class="form-control" required>
+                                <input type="hidden" name="code" value="">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Categoria</label>
+                                <select name="category_id" class="form-control">
+                                    <option value="">Selecione...</option>
+                                    <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Linha 2: Unidade | Preço Custo | Preço Venda -->
+                        <div class="form-row" style="margin-bottom:0;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Unidade</label>
+                                <select name="unit" class="form-control">
+                                    <option value="UN">UN - Unidade</option>
+                                    <option value="PC">PC - Peça</option>
+                                    <option value="CX">CX - Caixa</option>
+                                    <option value="KG">KG - Quilo</option>
+                                    <option value="MT">MT - Metro</option>
+                                    <option value="SV">SV - Serviço</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Preço de Custo *</label>
+                                <input type="number" name="cost_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Preço de Venda *</label>
+                                <input type="number" name="sale_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Linha 3: Margem % | Lucro R$ | Fornecedor -->
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Nome *</label>
-                        <input type="text" name="name" class="form-control" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Código de Barras *</label>
-                        <input type="text" name="barcode" class="form-control" required>
-                        <input type="hidden" name="code" value="">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Categoria</label>
-                        <select name="category_id" class="form-control">
-                            <option value="">Selecione...</option>
-                            <?php foreach ($categories as $cat): ?>
-                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Unidade</label>
-                        <select name="unit" class="form-control">
-                            <option value="UN">UN - Unidade</option>
-                            <option value="PC">PC - Peça</option>
-                            <option value="CX">CX - Caixa</option>
-                            <option value="KG">KG - Quilo</option>
-                            <option value="MT">MT - Metro</option>
-                            <option value="SV">SV - Serviço</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Preço de Custo *</label>
-                        <input type="number" name="cost_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
-                    </div>
-                    <div class="form-group">
-                        <label>Preço de Venda *</label>
-                        <input type="number" name="sale_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Margem %</label>
-                        <input type="text" name="margin_display" class="form-control" readonly style="background:#f0f0f0; font-weight:bold; color:#00b894;">
+                        <input type="text" name="margin_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#00b894;">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Lucro R$</label>
-                        <input type="text" name="profit_display" class="form-control" readonly style="background:#f0f0f0; font-weight:bold; color:#00b894;">
+                        <input type="text" name="profit_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#00b894;">
                     </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Fornecedor</label>
                         <input type="text" name="supplier" class="form-control" placeholder="Nome do fornecedor">
                     </div>
-                    <div class="form-group">
+                </div>
+
+                <!-- Linha 4: Garantia | Qtd Estoque | Estoque Mínimo -->
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Garantia</label>
                         <input type="text" name="warranty" class="form-control" placeholder="Ex: 90 dias, 1 ano">
                     </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Quantidade em Estoque *</label>
                         <input type="number" name="stock_quantity" class="form-control" min="0" value="0" required>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Estoque Mínimo *</label>
                         <input type="number" name="min_stock" class="form-control" min="0" value="0" required>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="allow_price_edit" value="1" checked>
-                        Permitir editar preço na venda/OS
-                    </label>
-                </div>
-
-                <div class="form-group">
-                    <label>Observações</label>
-                    <textarea name="observations" class="form-control" rows="2" placeholder="Observações sobre o produto"></textarea>
-                    <input type="hidden" name="description" value="">
+                <!-- Linha 5: Checkbox + Observações -->
+                <div class="form-row-2" style="margin-top:15px;">
+                    <div class="form-group" style="margin-bottom:0;display:flex;align-items:center;">
+                        <label style="margin-bottom:0;display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="allow_price_edit" value="1" checked>
+                            Permitir editar preço na venda/OS
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Observações</label>
+                        <textarea name="observations" class="form-control" rows="2" placeholder="Observações sobre o produto"></textarea>
+                        <input type="hidden" name="description" value="">
+                    </div>
                 </div>
 
                 <div class="modal-actions">
@@ -962,105 +978,109 @@ $categories = $pdo->query("SELECT * FROM categories WHERE active = 1 ORDER BY na
                 <input type="hidden" name="id" id="edit_id">
                 <input type="hidden" name="remove_image" id="edit_remove_image" value="0">
 
-                <!-- Foto do Produto -->
-                <div class="form-group" style="text-align:center; margin-bottom:15px;">
-                    <div id="edit_image_preview" style="width:120px;height:120px;margin:0 auto 10px;border-radius:10px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;cursor:pointer;" onclick="document.getElementById('edit_image_input').click()">
-                        <span style="color:#aaa;font-size:13px;"><i class="fas fa-camera" style="font-size:24px;display:block;margin-bottom:5px;"></i>Adicionar foto</span>
+                <!-- Layout: foto à esquerda + campos à direita -->
+                <div style="display:flex;gap:30px;align-items:flex-start;margin-bottom:15px;">
+                    <!-- Foto -->
+                    <div style="flex:0 0 120px;text-align:center;">
+                        <div id="edit_image_preview" style="width:120px;height:120px;border-radius:10px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;cursor:pointer;" onclick="document.getElementById('edit_image_input').click()">
+                            <span style="color:#aaa;font-size:13px;"><i class="fas fa-camera" style="font-size:24px;display:block;margin-bottom:5px;"></i>Adicionar foto</span>
+                        </div>
+                        <input type="file" name="image" id="edit_image_input" accept="image/*" style="display:none;" onchange="previewImage(this, 'edit_image_preview')">
+                        <button type="button" id="edit_remove_image_btn" style="display:none;background:#e74c3c;color:white;border:none;padding:4px 12px;border-radius:5px;font-size:11px;cursor:pointer;margin-top:5px;" onclick="removeProductImage()"><i class="fas fa-trash"></i> Remover foto</button>
                     </div>
-                    <input type="file" name="image" id="edit_image_input" accept="image/*" style="display:none;" onchange="previewImage(this, 'edit_image_preview')">
-                    <button type="button" id="edit_remove_image_btn" style="display:none;background:#e74c3c;color:white;border:none;padding:4px 12px;border-radius:5px;font-size:11px;cursor:pointer;margin-top:5px;" onclick="removeProductImage()"><i class="fas fa-trash"></i> Remover foto</button>
+                    <!-- Campos -->
+                    <div style="flex:1;">
+                        <!-- Linha 1: Nome | Código de Barras | Categoria -->
+                        <div class="form-row" style="margin-bottom:15px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Nome *</label>
+                                <input type="text" name="name" id="edit_name" class="form-control" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Código de Barras *</label>
+                                <input type="text" name="barcode" id="edit_barcode" class="form-control" required>
+                                <input type="hidden" name="code" id="edit_code" value="">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Categoria</label>
+                                <select name="category_id" id="edit_category_id" class="form-control">
+                                    <option value="">Selecione...</option>
+                                    <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Linha 2: Unidade | Preço Custo | Preço Venda -->
+                        <div class="form-row" style="margin-bottom:0;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Unidade</label>
+                                <select name="unit" id="edit_unit" class="form-control">
+                                    <option value="UN">UN - Unidade</option>
+                                    <option value="PC">PC - Peça</option>
+                                    <option value="CX">CX - Caixa</option>
+                                    <option value="KG">KG - Quilo</option>
+                                    <option value="MT">MT - Metro</option>
+                                    <option value="SV">SV - Serviço</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Preço de Custo *</label>
+                                <input type="number" name="cost_price" id="edit_cost_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Preço de Venda *</label>
+                                <input type="number" name="sale_price" id="edit_sale_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Linha 3: Margem % | Lucro R$ | Fornecedor -->
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Nome *</label>
-                        <input type="text" name="name" id="edit_name" class="form-control" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Código de Barras *</label>
-                        <input type="text" name="barcode" id="edit_barcode" class="form-control" required>
-                        <input type="hidden" name="code" id="edit_code" value="">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Categoria</label>
-                        <select name="category_id" id="edit_category_id" class="form-control">
-                            <option value="">Selecione...</option>
-                            <?php foreach ($categories as $cat): ?>
-                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Unidade</label>
-                        <select name="unit" id="edit_unit" class="form-control">
-                            <option value="UN">UN - Unidade</option>
-                            <option value="PC">PC - Peça</option>
-                            <option value="CX">CX - Caixa</option>
-                            <option value="KG">KG - Quilo</option>
-                            <option value="MT">MT - Metro</option>
-                            <option value="SV">SV - Serviço</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Preço de Custo *</label>
-                        <input type="number" name="cost_price" id="edit_cost_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
-                    </div>
-                    <div class="form-group">
-                        <label>Preço de Venda *</label>
-                        <input type="number" name="sale_price" id="edit_sale_price" class="form-control" step="0.01" min="0" required oninput="calcMargin(this.form)">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Margem %</label>
-                        <input type="text" name="margin_display" id="edit_margin_display" class="form-control" readonly style="background:#f0f0f0; font-weight:bold; color:#00b894;">
+                        <input type="text" name="margin_display" id="edit_margin_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#00b894;">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Lucro R$</label>
-                        <input type="text" name="profit_display" id="edit_profit_display" class="form-control" readonly style="background:#f0f0f0; font-weight:bold; color:#00b894;">
+                        <input type="text" name="profit_display" id="edit_profit_display" class="form-control" readonly style="background:#f0f0f0;font-weight:bold;color:#00b894;">
                     </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Fornecedor</label>
                         <input type="text" name="supplier" id="edit_supplier" class="form-control" placeholder="Nome do fornecedor">
                     </div>
-                    <div class="form-group">
+                </div>
+
+                <!-- Linha 4: Garantia | Qtd Estoque | Estoque Mínimo -->
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Garantia</label>
                         <input type="text" name="warranty" id="edit_warranty" class="form-control" placeholder="Ex: 90 dias, 1 ano">
                     </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Quantidade em Estoque *</label>
                         <input type="number" name="stock_quantity" id="edit_stock_quantity" class="form-control" min="0" required>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0;">
                         <label>Estoque Mínimo *</label>
                         <input type="number" name="min_stock" id="edit_min_stock" class="form-control" min="0" required>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="allow_price_edit" id="edit_allow_price_edit" value="1">
-                        Permitir editar preço na venda/OS
-                    </label>
-                </div>
-
-                <div class="form-group">
-                    <label>Observações</label>
-                    <textarea name="observations" id="edit_observations" class="form-control" rows="2" placeholder="Observações sobre o produto"></textarea>
-                    <input type="hidden" name="description" id="edit_description" value="">
+                <!-- Linha 5: Checkbox + Observações -->
+                <div class="form-row-2" style="margin-top:15px;">
+                    <div class="form-group" style="margin-bottom:0;display:flex;align-items:center;">
+                        <label style="margin-bottom:0;display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="allow_price_edit" id="edit_allow_price_edit" value="1">
+                            Permitir editar preço na venda/OS
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Observações</label>
+                        <textarea name="observations" id="edit_observations" class="form-control" rows="2" placeholder="Observações sobre o produto"></textarea>
+                        <input type="hidden" name="description" id="edit_description" value="">
+                    </div>
                 </div>
 
                 <div class="modal-actions">

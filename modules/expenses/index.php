@@ -323,8 +323,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
     overflow-y:auto;
 }
 .modal-content {
-    background:rgba(255,255,255,0.95);margin:40px auto;padding:30px;
-    border-radius:15px;max-width:700px;box-shadow:0 8px 32px rgba(0,0,0,0.2);
+    background:rgba(255,255,255,0.95);margin:30px auto;padding:30px;
+    border-radius:15px;max-width:1000px;width:96%;box-shadow:0 8px 32px rgba(0,0,0,0.2);
 }
 .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
 .modal-header h2 {margin:0;display:flex;align-items:center;gap:10px;}
@@ -333,8 +333,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
     width:35px;height:35px;cursor:pointer;font-size:18px;transition:all .3s;
 }
 .close:hover {transform:rotate(90deg);background:#d32f2f;}
-.form-row {display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap;}
-.form-group {flex:1;min-width:200px;}
+.form-row {display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-row-2 {display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-row-full {margin-bottom:20px;}
+.form-group {}
 .form-group label {display:block;margin-bottom:5px;font-weight:600;color:#333;}
 .form-control {
     width:100%;padding:10px;border:2px solid #ddd;border-radius:8px;
@@ -344,11 +346,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
 .empty {text-align:center;padding:40px;color:#777;font-style:italic;}
 
 .filter-box {
-    display:flex;gap:15px;align-items:flex-end;flex-wrap:wrap;
+    display:flex;align-items:flex-end;flex-wrap:wrap;
 }
-.filter-box .form-group {
-    flex:1;min-width:200px;
-}
+.filter-box .form-group {flex:1;min-width:200px;}
+.filter-box .form-group + .form-group {margin-left:30px;}
+.filter-box .form-group:last-child {margin-left:30px;flex:0 0 auto;}
 </style>
 </head>
 <body>
@@ -406,7 +408,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
                 <div class="form-group">
-                    <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-search"></i> Filtrar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                 </div>
             </div>
         </form>
@@ -467,8 +469,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="add">
+            <!-- Linha 1: Descrição | Tipo | Valor -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Descrição *</label>
                     <input type="text" name="description" class="form-control" required placeholder="Ex: Conta de luz">
                 </div>
@@ -481,18 +484,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="fornecedor">Fornecedor</option>
                     </select>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Valor (R$) *</label>
                     <input type="number" step="0.01" name="amount" class="form-control" required placeholder="0,00">
                 </div>
+            </div>
+            <!-- Linha 2: Data | Forma de Pagamento | Status -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Data da Despesa *</label>
                     <input type="date" name="expense_date" class="form-control" required value="<?= date('Y-m-d') ?>">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Forma de Pagamento *</label>
                     <select name="payment_method" class="form-control" required>
@@ -511,7 +513,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
             </div>
-            <div class="form-row">
+            <!-- Linha 3: Fornecedor | Observações -->
+            <div class="form-row-2">
                 <div class="form-group">
                     <label>Fornecedor/Usuário (opcional)</label>
                     <select name="supplier_id" class="form-control">
@@ -521,11 +524,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <?php endforeach; ?>
                     </select>
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:1 1 100%;">
+                <div class="form-group">
                     <label>Observações</label>
-                    <textarea name="observations" class="form-control" rows="3" placeholder="Informações adicionais..."></textarea>
+                    <textarea name="observations" class="form-control" rows="2" placeholder="Informações adicionais..."></textarea>
                 </div>
             </div>
             <div style="text-align:right;margin-top:20px;">
@@ -546,8 +547,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
         <form method="POST">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
+            <!-- Linha 1: Descrição | Tipo | Valor -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Descrição *</label>
                     <input type="text" name="description" id="edit_description" class="form-control" required>
                 </div>
@@ -559,18 +561,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="fornecedor">Fornecedor</option>
                     </select>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Valor (R$) *</label>
                     <input type="number" step="0.01" name="amount" id="edit_amount" class="form-control" required>
                 </div>
+            </div>
+            <!-- Linha 2: Data | Forma de Pagamento | Status -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Data da Despesa *</label>
                     <input type="date" name="expense_date" id="edit_expense_date" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Forma de Pagamento *</label>
                     <select name="payment_method" id="edit_payment_method" class="form-control" required>
@@ -588,7 +589,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
             </div>
-            <div class="form-row">
+            <!-- Linha 3: Fornecedor | Observações -->
+            <div class="form-row-2">
                 <div class="form-group">
                     <label>Fornecedor/Usuário (opcional)</label>
                     <select name="supplier_id" id="edit_supplier_id" class="form-control">
@@ -598,11 +600,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <?php endforeach; ?>
                     </select>
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:1 1 100%;">
+                <div class="form-group">
                     <label>Observações</label>
-                    <textarea name="observations" id="edit_observations" class="form-control" rows="3"></textarea>
+                    <textarea name="observations" id="edit_observations" class="form-control" rows="2"></textarea>
                 </div>
             </div>
             <div style="text-align:right;margin-top:20px;">

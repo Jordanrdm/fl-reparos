@@ -470,11 +470,14 @@ body {
 }
 
 .filter-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
-    gap:15px;
+    display:flex;
+    align-items:flex-end;
+    gap:0;
     margin-bottom:15px;
 }
+.filter-grid .form-group {flex:1;}
+.filter-grid .form-group + .form-group {margin-left:30px;}
+.filter-grid .form-group:last-child {flex:0 0 auto;margin-left:30px;}
 .form-group {margin-bottom:15px;}
 .form-group label {display:block;margin-bottom:5px;font-weight:600;color:#333;}
 .form-control {
@@ -696,8 +699,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <input type="date" name="date_to" value="<?= $date_to ?>" class="form-control">
                 </div>
                 <div class="form-group">
-                    <label>&nbsp;</label>
-                    <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-search"></i> Filtrar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                 </div>
             </div>
         </form>

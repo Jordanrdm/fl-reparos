@@ -153,16 +153,16 @@ tr:hover {background:rgba(103,58,183,0.1);}
     background:rgba(0,0,0,0.6);z-index:1000;backdrop-filter:blur(5px);
 }
 .modal-content {
-    background:rgba(255,255,255,0.95);margin:60px auto;padding:25px;
-    border-radius:15px;max-width:600px;box-shadow:0 8px 32px rgba(0,0,0,0.2);
+    background:rgba(255,255,255,0.95);margin:40px auto;padding:25px;
+    border-radius:15px;max-width:900px;width:95%;box-shadow:0 8px 32px rgba(0,0,0,0.2);
 }
 .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;}
 .close {
     background:#f44336;border:none;color:#fff;border-radius:50%;
     width:35px;height:35px;cursor:pointer;font-size:18px;
 }
-.form-row {display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap;}
-.form-group {flex:1;min-width:200px;}
+.form-row {display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-group {}
 .form-control {width:100%;padding:10px;border:2px solid #ccc;border-radius:8px;}
 .form-control:focus {border-color:#667eea;outline:none;}
 .empty {text-align:center;padding:40px;color:#777;}
@@ -179,9 +179,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
     </div>
 
     <div class="search-box">
-        <form method="GET">
-            <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" class="form-control" placeholder="Buscar por cliente ou descrição...">
-            <button type="submit" class="btn btn-primary" style="margin-top:10px;"><i class="fas fa-search"></i> Buscar</button>
+        <form method="GET" style="display:flex;align-items:flex-end;gap:30px;">
+            <div style="flex:1;">
+                <label style="display:block;margin-bottom:6px;font-weight:600;color:#555;">Buscar</label>
+                <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" class="form-control" placeholder="Buscar por cliente ou descrição...">
+            </div>
+            <div style="flex:0 0 auto;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
+                <?php if(!empty($search)): ?>
+                <a href="index.php" class="btn btn-secondary" style="margin-left:10px;"><i class="fas fa-times"></i> Limpar</a>
+                <?php endif; ?>
+            </div>
         </form>
     </div>
 
@@ -223,6 +231,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="add">
+            <!-- Linha 1: Cliente | Descrição | Valor -->
             <div class="form-row">
                 <div class="form-group">
                     <label>Cliente</label>
@@ -237,18 +246,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <label>Descrição</label>
                     <input type="text" name="description" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Valor (R$)</label>
                     <input type="number" step="0.01" name="amount" class="form-control" required>
                 </div>
+            </div>
+            <!-- Linha 2: Vencimento | Data Pagamento | Status -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Vencimento</label>
                     <input type="date" name="due_date" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Data do Pagamento</label>
                     <input type="date" name="payment_date" class="form-control">
@@ -280,6 +288,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
         <form method="POST">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
+            <!-- Linha 1: Cliente | Descrição | Valor -->
             <div class="form-row">
                 <div class="form-group">
                     <label>Cliente</label>
@@ -294,18 +303,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <label>Descrição</label>
                     <input type="text" name="description" id="edit_description" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Valor (R$)</label>
                     <input type="number" step="0.01" name="amount" id="edit_amount" class="form-control" required>
                 </div>
+            </div>
+            <!-- Linha 2: Vencimento | Data Pagamento | Status -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Vencimento</label>
                     <input type="date" name="due_date" id="edit_due_date" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Data do Pagamento</label>
                     <input type="date" name="payment_date" id="edit_payment_date" class="form-control">

@@ -37,8 +37,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             !empty($_POST['birth_date']) ? $_POST['birth_date'] : null
         ]);
         $newCustomerId = $conn->lastInsertId();
+        $logNewCustomer = [
+            'Nome'       => $_POST['name'],
+            'CPF/CNPJ'   => $_POST['cpf_cnpj'] ?? '',
+            'Telefone'   => $_POST['phone'] ?? '',
+            'Email'      => $_POST['email'] ?? '',
+            'Cidade'     => $_POST['city'] ?? '',
+            'Estado'     => $_POST['state'] ?? '',
+        ];
         logActivity('create', 'customers', $newCustomerId,
-            "Cliente '{$_POST['name']}' cadastrado — CPF/CNPJ: " . ($_POST['cpf_cnpj'] ?? '-') . ", Tel: " . ($_POST['phone'] ?? '-')
+            "Cliente '{$_POST['name']}' cadastrado — CPF/CNPJ: " . ($_POST['cpf_cnpj'] ?? '-') . ", Tel: " . ($_POST['phone'] ?? '-'),
+            null, $logNewCustomer
         );
         echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Cliente cadastrado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
@@ -254,10 +263,11 @@ body {
 
 .filter-box {
     display:flex;
-    gap:15px;
     align-items:flex-end;
     flex-wrap:wrap;
 }
+.filter-box .form-group + .form-group {margin-left:30px;}
+.filter-box .form-group:last-child {margin-left:30px;flex:0 0 auto;}
 .form-group {
     flex:1;
     min-width:200px;
@@ -284,8 +294,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
     overflow-y:auto;
 }
 .modal-content {
-    background:rgba(255,255,255,0.95);margin:40px auto;padding:30px;
-    border-radius:15px;max-width:700px;box-shadow:0 8px 32px rgba(0,0,0,0.2);
+    background:rgba(255,255,255,0.95);margin:20px auto;padding:30px;
+    border-radius:15px;max-width:1100px;width:96%;box-shadow:0 8px 32px rgba(0,0,0,0.2);
 }
 .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
 .modal-header h2 {margin:0;display:flex;align-items:center;gap:10px;}
@@ -294,7 +304,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
     width:35px;height:35px;cursor:pointer;font-size:18px;transition:all .3s;
 }
 .close:hover {transform:rotate(90deg);background:#d32f2f;}
-.form-row {display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap;}
+.form-row {display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-row-2 {display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-row-full {margin-bottom:20px;}
 textarea.form-control {
     resize:vertical;
     min-height:80px;
@@ -444,8 +456,8 @@ textarea.form-control {
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-group">
-                    <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-search"></i> Filtrar</button>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                 </div>
                 <?php if(!empty($search) || !empty($filter_state)): ?>
                 <div class="form-group">
@@ -569,8 +581,9 @@ textarea.form-control {
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="add">
+            <!-- Linha 1: Nome | CPF/CNPJ | Telefone -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" class="form-control" required placeholder="Nome completo do cliente">
                 </div>
@@ -578,12 +591,13 @@ textarea.form-control {
                     <label>CPF/CNPJ</label>
                     <input type="text" name="cpf_cnpj" class="form-control" placeholder="000.000.000-00">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Telefone</label>
                     <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
                 </div>
+            </div>
+            <!-- Linha 2: Email | Data Nascimento | CEP -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Email</label>
                     <input type="email" name="email" class="form-control" placeholder="email@exemplo.com">
@@ -592,19 +606,18 @@ textarea.form-control {
                     <label>Data de Nascimento</label>
                     <input type="date" name="birth_date" class="form-control">
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Endereço</label>
-                    <input type="text" name="address" class="form-control" placeholder="Rua, número, complemento">
-                </div>
                 <div class="form-group">
                     <label>CEP</label>
                     <input type="text" name="zipcode" class="form-control" placeholder="00000-000">
                 </div>
             </div>
+            <!-- Linha 3: Endereço | Cidade | Estado -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
+                    <label>Endereço</label>
+                    <input type="text" name="address" class="form-control" placeholder="Rua, número, complemento">
+                </div>
+                <div class="form-group">
                     <label>Cidade</label>
                     <input type="text" name="city" class="form-control" placeholder="Nome da cidade">
                 </div>
@@ -624,8 +637,9 @@ textarea.form-control {
                     </select>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:1 1 100%;">
+            <!-- Linha 4: Observações full width -->
+            <div class="form-row-full">
+                <div class="form-group">
                     <label>Observações</label>
                     <textarea name="notes" class="form-control" placeholder="Anotações sobre o cliente..."></textarea>
                 </div>
@@ -648,8 +662,9 @@ textarea.form-control {
         <form method="POST">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
+            <!-- Linha 1: Nome | CPF/CNPJ | Telefone -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" id="edit_name" class="form-control" required>
                 </div>
@@ -657,12 +672,13 @@ textarea.form-control {
                     <label>CPF/CNPJ</label>
                     <input type="text" name="cpf_cnpj" id="edit_cpf_cnpj" class="form-control">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Telefone</label>
                     <input type="text" name="phone" id="edit_phone" class="form-control">
                 </div>
+            </div>
+            <!-- Linha 2: Email | Data Nascimento | CEP -->
+            <div class="form-row">
                 <div class="form-group">
                     <label>Email</label>
                     <input type="email" name="email" id="edit_email" class="form-control">
@@ -671,19 +687,18 @@ textarea.form-control {
                     <label>Data de Nascimento</label>
                     <input type="date" name="birth_date" id="edit_birth_date" class="form-control">
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Endereço</label>
-                    <input type="text" name="address" id="edit_address" class="form-control">
-                </div>
                 <div class="form-group">
                     <label>CEP</label>
                     <input type="text" name="zipcode" id="edit_zipcode" class="form-control">
                 </div>
             </div>
+            <!-- Linha 3: Endereço | Cidade | Estado -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
+                    <label>Endereço</label>
+                    <input type="text" name="address" id="edit_address" class="form-control">
+                </div>
+                <div class="form-group">
                     <label>Cidade</label>
                     <input type="text" name="city" id="edit_city" class="form-control">
                 </div>
@@ -703,8 +718,9 @@ textarea.form-control {
                     </select>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:1 1 100%;">
+            <!-- Linha 4: Observações full width -->
+            <div class="form-row-full">
+                <div class="form-group">
                     <label>Observações</label>
                     <textarea name="notes" id="edit_notes" class="form-control"></textarea>
                 </div>

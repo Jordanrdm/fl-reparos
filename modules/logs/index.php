@@ -497,6 +497,13 @@ function openDiff(id) {
             html += `<tr><td><strong>${escHtml(k)}</strong></td><td>${escHtml(String(v ?? ''))}</td></tr>`;
         });
         html += `</tbody></table>`;
+    } else if (log.new_values) {
+        html += `<h4 style="margin-bottom:10px;color:#333;">Dados registrados:</h4>
+        <table class="diff-table"><thead><tr><th>Campo</th><th>Valor</th></tr></thead><tbody>`;
+        Object.entries(log.new_values).forEach(([k, v]) => {
+            html += `<tr><td><strong>${escHtml(k)}</strong></td><td>${escHtml(String(v ?? ''))}</td></tr>`;
+        });
+        html += `</tbody></table>`;
     }
 
     document.getElementById('diffBody').innerHTML = html;

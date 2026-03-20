@@ -50,8 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
     $stmt->execute([$rid]);
     $ob = $stmt->fetchColumn();
     $closing = $ob + $t['te'] - $t['tx'];
-    $stmt = $conn->prepare("UPDATE cash_register SET closing_date=NOW(),closing_balance=?,total_sales=?,total_expenses=?,total_cash=?,total_card=?,total_pix=?,observations=?,status='closed',updated_at=NOW() WHERE id=?");
-    $stmt->execute([$closing, $t['te'], $t['tx'], $_POST['total_cash']??0, $_POST['total_card']??0, $_POST['total_pix']??0, $_POST['observations']??null, $rid]);
+    $stmt = $conn->prepare("UPDATE cash_register SET closing_date=NOW(),closing_balance=?,total_sales=?,total_expenses=?,total_cash=?,total_debit_card=?,total_credit_card=?,total_pix=?,observations=?,status='closed',updated_at=NOW() WHERE id=?");
+    $stmt->execute([$closing, $t['te'], $t['tx'], $_POST['total_cash']??0, $_POST['total_debit']??0, $_POST['total_credit']??0, $_POST['total_pix']??0, $_POST['observations']??null, $rid]);
     echo "<script>sessionStorage.setItem('fl_flash',JSON.stringify({msg:'Caixa fechado com sucesso!',type:'success'}));location='index.php';</script>"; exit;
 }
 
@@ -582,18 +582,18 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
                     <input type="number" step="0.01" name="total_cash" class="form-control" placeholder="0,00" value="0">
                 </div>
                 <div class="form-group">
-                    <label>Total em Cartão (R$)</label>
-                    <input type="number" step="0.01" name="total_card" class="form-control" placeholder="0,00" value="0">
+                    <label>Total em PIX (R$)</label>
+                    <input type="number" step="0.01" name="total_pix" class="form-control" placeholder="0,00" value="0">
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label>Total em PIX (R$)</label>
-                    <input type="number" step="0.01" name="total_pix" class="form-control" placeholder="0,00" value="0">
+                    <label>Cartão Débito (R$)</label>
+                    <input type="number" step="0.01" name="total_debit" class="form-control" placeholder="0,00" value="0">
                 </div>
                 <div class="form-group">
-                    <label>Total em Transferência (R$)</label>
-                    <input type="number" step="0.01" name="total_transfer" class="form-control" placeholder="0,00" value="0">
+                    <label>Cartão Crédito (R$)</label>
+                    <input type="number" step="0.01" name="total_credit" class="form-control" placeholder="0,00" value="0">
                 </div>
             </div>
             <div class="form-group">

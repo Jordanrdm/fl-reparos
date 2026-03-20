@@ -155,10 +155,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             }
         }
 
+        $logNewValuesOS = [
+            'Cliente'        => $custNameLog,
+            'Dispositivo'    => $_POST['device'] ?? '',
+            'Marca/Modelo'   => ($_POST['brand'] ?? '') . ' ' . ($_POST['model'] ?? ''),
+            'Status'         => $_POST['status'] ?? '',
+            'Total'          => formatMoney($_POST['total_cost'] ?? 0),
+            'Pagamento'      => $_POST['payment_method'] ?? '',
+            'Técnico'        => $_POST['technician_name'] ?? '',
+        ];
         logActivity('create', 'service_orders', $osId,
-            "OS #$osId criada — Cliente: $custNameLog, Dispositivo: {$_POST['device']}, Total: " . formatMoney($_POST['total_cost'] ?? 0)
+            "OS #$osId criada — Cliente: $custNameLog, Dispositivo: {$_POST['device']}, Total: " . formatMoney($_POST['total_cost'] ?? 0),
+            null, $logNewValuesOS
         );
-        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Ordem de serviço criada com sucesso!',type:'success'}));window.location='index.php';</script>";
+        echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Ordem de serviço criada com sucesso!',type:'success'}));window.location='index.php?print_os=$osId';</script>";
         exit;
     } catch (PDOException $e) {
         echo "<script>document.addEventListener('DOMContentLoaded',function(){ showAlert('Erro ao cadastrar: " . addslashes($e->getMessage()) . "','error'); });</script>";
@@ -516,6 +526,19 @@ $stmt = $conn->prepare("
 $stmt->execute($paramsWithPagination);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Verificar se deve perguntar sobre impressão após criar OS
+$printOsData = null;
+if (!empty($_GET['print_os']) && is_numeric($_GET['print_os'])) {
+    $stmtPrint = $conn->prepare("
+        SELECT so.*, c.name as customer_name, c.cpf_cnpj, c.phone as customer_phone
+        FROM service_orders so
+        LEFT JOIN customers c ON so.customer_id = c.id
+        WHERE so.id = ?
+    ");
+    $stmtPrint->execute([(int)$_GET['print_os']]);
+    $printOsData = $stmtPrint->fetch(PDO::FETCH_ASSOC);
+}
+
 // Buscar clientes para o formulário (apenas clientes ativos)
 $customers = $conn->query("SELECT id, name, cpf_cnpj, phone FROM customers WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -681,7 +704,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
 .empty {text-align:center;padding:40px;color:#777;font-style:italic;}
 
 .filter-box {
-    display:flex;gap:15px;align-items:flex-end;flex-wrap:wrap;
+    display:flex;gap:30px;align-items:flex-end;flex-wrap:wrap;
 }
 .filter-box .form-group {
     flex:1;min-width:200px;
@@ -854,8 +877,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="cancelled" <?= $filter_status === 'cancelled' ? 'selected' : '' ?>>Cancelado</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-search"></i> Filtrar</button>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                 </div>
             </div>
         </form>
@@ -3043,53 +3066,54 @@ async function saveQuickCustomer(e) {
 
 <!-- Modal: Cadastro Rápido de Cliente -->
 <div id="quickCustomerModal" class="modal">
-    <div class="modal-content" style="max-width:600px;">
+    <div class="modal-content" style="max-width:1100px;width:96%;margin:20px auto;">
         <div class="modal-header">
             <h2><i class="fas fa-user-plus"></i> Novo Cliente</h2>
             <button class="close" onclick="closeModal('quickCustomerModal')">&times;</button>
         </div>
-        <form id="quickCustomerForm" onsubmit="saveQuickCustomer(event)">
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Nome Completo *</label>
+        <form id="quickCustomerForm" onsubmit="saveQuickCustomer(event)" style="padding:10px 0;">
+            <!-- Linha 1: Nome | CPF/CNPJ | Telefone -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Nome Completo *</label>
                     <input type="text" name="name" class="form-control" required placeholder="Nome completo do cliente">
                 </div>
-                <div class="form-group">
-                    <label>CPF/CNPJ</label>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">CPF/CNPJ</label>
                     <input type="text" name="cpf_cnpj" class="form-control" placeholder="000.000.000-00">
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Telefone</label>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Telefone</label>
                     <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
                 </div>
-                <div class="form-group">
-                    <label>Email</label>
+            </div>
+            <!-- Linha 2: Email | Data de Nascimento | CEP -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Email</label>
                     <input type="email" name="email" class="form-control" placeholder="email@exemplo.com">
                 </div>
-                <div class="form-group">
-                    <label>Data de Nascimento</label>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Data de Nascimento</label>
                     <input type="date" name="birth_date" class="form-control">
                 </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Endereço</label>
-                    <input type="text" name="address" class="form-control" placeholder="Rua, número, complemento">
-                </div>
-                <div class="form-group">
-                    <label>CEP</label>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">CEP</label>
                     <input type="text" name="zipcode" class="form-control" placeholder="00000-000">
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                    <label>Cidade</label>
+            <!-- Linha 3: Endereço | Cidade | Estado -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Endereço</label>
+                    <input type="text" name="address" class="form-control" placeholder="Rua, número, complemento">
+                </div>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Cidade</label>
                     <input type="text" name="city" class="form-control" placeholder="Nome da cidade">
                 </div>
-                <div class="form-group">
-                    <label>Estado</label>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Estado</label>
                     <select name="state" class="form-control">
                         <option value="">Selecione</option>
                         <option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option>
@@ -3104,11 +3128,10 @@ async function saveQuickCustomer(e) {
                     </select>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group" style="flex:1 1 100%;">
-                    <label>Observações</label>
-                    <textarea name="notes" class="form-control" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
-                </div>
+            <!-- Linha 4: Observações full width -->
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;color:#333;">Observações</label>
+                <textarea name="notes" class="form-control" rows="2" placeholder="Anotações sobre o cliente..."></textarea>
             </div>
             <div id="quickCustomerError" style="display:none;color:#e74c3c;margin-bottom:10px;"></div>
             <div style="text-align:right;margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
@@ -3118,6 +3141,28 @@ async function saveQuickCustomer(e) {
         </form>
     </div>
 </div>
+
+<?php if ($printOsData): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Limpa o parâmetro da URL sem recarregar
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, '', 'index.php');
+    }
+    showConfirm(
+        'Deseja imprimir a Ordem de Serviço <strong>#<?= $printOsData['id'] ?></strong> agora?',
+        'Imprimir OS?',
+        '<i class="fas fa-print"></i> Imprimir',
+        'Agora não',
+        'info'
+    ).then(function(ok) {
+        if (ok) {
+            printServiceOrder(<?= json_encode($printOsData) ?>);
+        }
+    });
+});
+</script>
+<?php endif; ?>
 
 </body>
 </html>

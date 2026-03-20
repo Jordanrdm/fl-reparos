@@ -41,8 +41,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $_POST['status'] ?? 'active'
         ]);
         $newUserId = $conn->lastInsertId();
+        $logNewUser = [
+            'Nome'   => $_POST['name'],
+            'Email'  => $_POST['email'],
+            'Perfil' => $_POST['role'],
+            'Status' => $_POST['status'] ?? 'active',
+        ];
         logActivity('create', 'users', $newUserId,
-            "Usuário '{$_POST['name']}' cadastrado — Email: {$_POST['email']}, Perfil: {$_POST['role']}"
+            "Usuário '{$_POST['name']}' cadastrado — Email: {$_POST['email']}, Perfil: {$_POST['role']}",
+            null, $logNewUser
         );
         echo "<script>sessionStorage.setItem('fl_flash', JSON.stringify({msg:'Usuário cadastrado com sucesso!',type:'success'}));window.location='index.php';</script>";
         exit;
@@ -333,10 +340,11 @@ body {
 
 .filter-box {
     display:flex;
-    gap:15px;
     align-items:flex-end;
     flex-wrap:wrap;
 }
+.filter-box .form-group + .form-group {margin-left:30px;}
+.filter-box .form-group:last-child {margin-left:30px;flex:0 0 auto;}
 .form-group {
     flex:1;
     min-width:200px;
@@ -377,8 +385,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
     overflow-y:auto;
 }
 .modal-content {
-    background:rgba(255,255,255,0.95);margin:40px auto;padding:30px;
-    border-radius:15px;max-width:600px;box-shadow:0 8px 32px rgba(0,0,0,0.2);
+    background:rgba(255,255,255,0.95);margin:30px auto;padding:30px;
+    border-radius:15px;max-width:1000px;width:96%;box-shadow:0 8px 32px rgba(0,0,0,0.2);
 }
 .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
 .modal-header h2 {margin:0;display:flex;align-items:center;gap:10px;}
@@ -387,7 +395,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
     width:35px;height:35px;cursor:pointer;font-size:18px;transition:all .3s;
 }
 .close:hover {transform:rotate(90deg);background:#d32f2f;}
-.form-row {display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap;}
+.form-row {display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:20px;}
+.form-row-2 {display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:20px;}
 
 .alert {
     padding:15px 20px;
@@ -485,8 +494,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="inactive" <?= $filter_status === 'inactive' ? 'selected' : '' ?>>Inativo</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-search"></i> Filtrar</button>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                 </div>
                 <?php if(!empty($search) || !empty($filter_role) || !empty($filter_status)): ?>
                 <div class="form-group">
@@ -631,12 +640,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
         <form method="POST">
             <input type="hidden" name="action" value="add_technician">
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" class="form-control" required placeholder="Nome do técnico">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Telefone</label>
                     <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
@@ -663,13 +670,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="add_attendant">
-            <div class="form-row">
-                <div class="form-group" style="flex:2;">
+            <div class="form-row-2">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" class="form-control" required placeholder="Nome do atendente">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Telefone</label>
                     <input type="text" name="phone" class="form-control" placeholder="(00) 00000-0000">
@@ -698,13 +703,12 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <strong>Perfis:</strong> Admin (acesso total), Gerente (operações), Vendedor (vendas e atendimento)
             </div>
 
+            <!-- Linha 1: Nome | Email | Senha -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" class="form-control" required placeholder="Nome do usuário">
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Email *</label>
                     <input type="email" name="email" class="form-control" required placeholder="email@exemplo.com">
@@ -714,7 +718,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <input type="password" name="password" class="form-control" required placeholder="Mínimo 6 caracteres" minlength="6">
                 </div>
             </div>
-            <div class="form-row">
+            <!-- Linha 2: Perfil | Status -->
+            <div class="form-row-2">
                 <div class="form-group">
                     <label>Perfil *</label>
                     <select name="role" class="form-control" required>
@@ -750,23 +755,23 @@ tr:hover {background:rgba(103,58,183,0.1);}
         <form method="POST">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
+            <!-- Linha 1: Nome | Email | Nova Senha -->
             <div class="form-row">
-                <div class="form-group" style="flex:2;">
+                <div class="form-group">
                     <label>Nome Completo *</label>
                     <input type="text" name="name" id="edit_name" class="form-control" required>
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group">
                     <label>Email *</label>
                     <input type="email" name="email" id="edit_email" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label>Nova Senha (deixe vazio para manter)</label>
+                    <label>Nova Senha (vazio = manter)</label>
                     <input type="password" name="password" class="form-control" placeholder="Deixe vazio para não alterar" minlength="6">
                 </div>
             </div>
-            <div class="form-row">
+            <!-- Linha 2: Perfil | Status -->
+            <div class="form-row-2">
                 <div class="form-group">
                     <label>Perfil *</label>
                     <select name="role" id="edit_role" class="form-control" required>
