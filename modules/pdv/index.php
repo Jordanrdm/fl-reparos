@@ -439,10 +439,10 @@ try {
         }
 
         .pdv-container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: 1fr 400px;
+            grid-template-columns: 3fr 2fr;
             gap: 20px;
             height: calc(100vh - 30px);
         }
@@ -553,7 +553,7 @@ try {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             border-radius: 15px;
-            padding: 12px;
+            padding: 20px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
             display: flex;
             flex-direction: column;
@@ -563,13 +563,13 @@ try {
 
         .cart-header {
             text-align: center;
-            padding-bottom: 8px;
+            padding-bottom: 12px;
             border-bottom: 2px solid #e0e0e0;
-            margin-bottom: 8px;
+            margin-bottom: 14px;
         }
 
         .cart-header h2 {
-            font-size: 18px;
+            font-size: 20px;
             margin: 0;
         }
 
@@ -637,33 +637,33 @@ try {
 
         .cart-summary {
             border-top: 2px solid #e0e0e0;
-            padding-top: 8px;
-            margin-top: 8px;
+            padding-top: 14px;
+            margin-top: 10px;
         }
 
         .summary-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 4px;
-            font-size: 14px;
+            margin-bottom: 8px;
+            font-size: 15px;
         }
 
         .summary-total {
             font-weight: bold;
-            font-size: 16px;
+            font-size: 19px;
             color: #4CAF50;
             border-top: 1px solid #e0e0e0;
-            padding-top: 6px;
-            margin-top: 4px;
+            padding-top: 10px;
+            margin-top: 6px;
         }
 
         .form-group {
-            margin-bottom: 6px;
+            margin-bottom: 12px;
         }
 
         .form-group label {
             display: block;
-            margin-bottom: 3px;
+            margin-bottom: 5px;
             font-size: 14px;
             color: #333;
             font-weight: 500;
@@ -671,7 +671,7 @@ try {
 
         .form-control {
             width: 100%;
-            padding: 6px 8px;
+            padding: 9px 12px;
             border: 2px solid #e0e0e0;
             border-radius: 5px;
             font-size: 14px;
@@ -710,10 +710,10 @@ try {
         .btn-success {
             background: linear-gradient(45deg, #FF9800, #F57C00);
             color: white;
-            font-size: 15px;
-            padding: 8px 16px;
+            font-size: 16px;
+            padding: 14px 16px;
             width: 100%;
-            margin-top: 8px;
+            margin-top: 12px;
         }
 
         .btn:hover {

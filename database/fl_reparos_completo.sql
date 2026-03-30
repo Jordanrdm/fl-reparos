@@ -121,7 +121,7 @@ DROP TABLE IF EXISTS `cash_flow`;
 CREATE TABLE `cash_flow` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `user_id` int(11) NOT NULL,
-  `type` enum('opening','sale','service','expense','closing') NOT NULL,
+  `type` enum('opening','sale','service','expense','closing','entry') NOT NULL,
   `description` varchar(200) NOT NULL,
   `amount` decimal(10,2) NOT NULL,
   `reference_id` int(11) DEFAULT NULL,

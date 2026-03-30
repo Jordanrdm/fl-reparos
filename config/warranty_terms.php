@@ -8,6 +8,7 @@
 
 return [
     'title' => 'TERMOS DE GARANTIA',
+    'default_period' => '90 dias',
 
     'clauses' => [
         [

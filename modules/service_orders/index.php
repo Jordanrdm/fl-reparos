@@ -10,6 +10,9 @@ require_once('../../config/database.php');
 require_once('../../config/app.php');
 $conn = $database->getConnection();
 
+$warrantyTerms  = require('../../config/warranty_terms.php');
+$warrantyDefault = $warrantyTerms['default_period'] ?? '90 dias';
+
 // Verificar permissão de visualização
 requirePermission('service_orders', 'view');
 
@@ -80,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
              checklist_lens, checklist_lens_condition, checklist_back_cover, checklist_screen,
              checklist_connector, checklist_camera_front_back, checklist_face_id, checklist_sim_card,
              technician_name, attendant_name, warranty_period, image)
-            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $_POST['customer_id'],
             $_SESSION['user_id'],
@@ -93,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
             $primaryInstallments,
             $_POST['change_amount'] ?? 0,
             $_POST['deposit_amount'] ?? 0,
+            !empty($_POST['entry_datetime']) ? date('Y-m-d H:i:s', strtotime($_POST['entry_datetime'])) : date('Y-m-d H:i:s'),
             $_POST['technical_report'] ?? null,
             $_POST['reported_problem'] ?? null,
             $_POST['customer_observations'] ?? null,
@@ -221,6 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 
         $stmt = $conn->prepare("UPDATE service_orders
             SET customer_id=?, device=?, device_type=?, status=?, total_cost=?, discount=?, payment_method=?, payment_methods=?, installments=?, change_amount=?, deposit_amount=?,
+                entry_datetime=COALESCE(?, entry_datetime),
                 technical_report=?, reported_problem=?, customer_observations=?, internal_observations=?,
                 device_powers_on=?, device_password=?, password_pattern=?,
                 checklist_lens=?, checklist_lens_condition=?, checklist_back_cover=?, checklist_screen=?,
@@ -239,6 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $primaryInstallments,
             $_POST['change_amount'] ?? 0,
             $_POST['deposit_amount'] ?? 0,
+            !empty($_POST['entry_datetime']) ? date('Y-m-d H:i:s', strtotime($_POST['entry_datetime'])) : null,
             $_POST['technical_report'] ?? null,
             $_POST['reported_problem'] ?? null,
             $_POST['customer_observations'] ?? null,
@@ -258,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
             $_POST['attendant_name'] ?? null,
             $_POST['warranty_period'] ?? '90 dias',
             $imageName,
-            $exitDatetime,
+            !empty($_POST['exit_datetime']) ? date('Y-m-d H:i:s', strtotime($_POST['exit_datetime'])) : $exitDatetime,
             $_POST['id']
         ]);
 
@@ -279,44 +285,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
 
                 // Só registra se ainda NÃO existe registro no caixa
                 if (!$existeRegistro) {
-                    $description = "OS #" . $_POST['id'] . " - " . $_POST['device'] . " - " . ucfirst($paymentMethod);
+                    // Montar descrição detalhada igual à venda
+                    $pmLabels = [
+                        'dinheiro'       => 'Dinheiro',
+                        'pix'            => 'PIX',
+                        'cartao_credito' => 'Cartão Crédito',
+                        'cartao_debito'  => 'Cartão Débito',
+                    ];
 
-                    // Se for pagamento em dinheiro com troco
-                    if ($paymentMethod === 'dinheiro' && $changeAmount > 0) {
-                        $valorRecebido = $totalCost + $changeAmount;
-
-                        // Registrar ENTRADA: Valor recebido do cliente (positivo)
-                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
-                            (user_id, type, description, amount, reference_id, reference_type, created_at)
-                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())");
-                        $stmtCash->execute([
-                            $_SESSION['user_id'],
-                            $description . " - Valor Recebido",
-                            $valorRecebido,
-                            $_POST['id']
-                        ]);
-
-                        // Registrar SAÍDA: Troco devolvido (negativo como expense)
-                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
-                            (user_id, type, description, amount, reference_id, reference_type, created_at)
-                            VALUES (?, 'expense', ?, ?, ?, 'service_order_change', NOW())");
-                        $stmtCash->execute([
-                            $_SESSION['user_id'],
-                            $description . " - Troco",
-                            $changeAmount,
-                            $_POST['id']
-                        ]);
+                    if (count($paymentMethodsArr) > 1) {
+                        $parts = array_map(function($p) use ($pmLabels) {
+                            $label = $pmLabels[$p['method']] ?? ucfirst($p['method']);
+                            $str   = $label . ': R$ ' . number_format($p['amount'], 2, ',', '.');
+                            if (($p['method'] === 'cartao_credito') && ($p['installments'] ?? 1) > 1) {
+                                $str .= ' (' . $p['installments'] . 'x)';
+                            }
+                            return $str;
+                        }, $paymentMethodsArr);
+                        $paymentDesc = 'Múltiplos: ' . implode(', ', $parts);
+                    } elseif (!empty($paymentMethodsArr)) {
+                        $p     = $paymentMethodsArr[0];
+                        $label = $pmLabels[$p['method']] ?? ucfirst($p['method']);
+                        $paymentDesc = $label;
+                        if (($p['method'] === 'cartao_credito') && ($p['installments'] ?? 1) > 1) {
+                            $paymentDesc .= ' (' . $p['installments'] . 'x)';
+                        }
                     } else {
-                        // Pagamento sem troco (PIX, Cartão, etc) - registra valor total
-                        $stmtCash = $conn->prepare("INSERT INTO cash_flow
+                        $paymentDesc = ucfirst($paymentMethod);
+                    }
+
+                    $description = "OS #" . $_POST['id'] . " - " . $_POST['device'] . " - " . $paymentDesc;
+
+                    // Se tiver troco, registrar entrada maior + saída do troco
+                    if ($changeAmount > 0) {
+                        $valorRecebido = $totalCost + $changeAmount;
+                        $conn->prepare("INSERT INTO cash_flow
                             (user_id, type, description, amount, reference_id, reference_type, created_at)
-                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())");
-                        $stmtCash->execute([
-                            $_SESSION['user_id'],
-                            $description,
-                            $totalCost,
-                            $_POST['id']
-                        ]);
+                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())")
+                            ->execute([$_SESSION['user_id'], $description . ' - Valor Recebido', $valorRecebido, $_POST['id']]);
+
+                        $conn->prepare("INSERT INTO cash_flow
+                            (user_id, type, description, amount, reference_id, reference_type, created_at)
+                            VALUES (?, 'expense', ?, ?, ?, 'service_order_change', NOW())")
+                            ->execute([$_SESSION['user_id'], $description . ' - Troco', $changeAmount, $_POST['id']]);
+                    } else {
+                        $conn->prepare("INSERT INTO cash_flow
+                            (user_id, type, description, amount, reference_id, reference_type, created_at)
+                            VALUES (?, 'service', ?, ?, ?, 'service_order', NOW())")
+                            ->execute([$_SESSION['user_id'], $description, $totalCost, $_POST['id']]);
                     }
                 }
             }
@@ -526,6 +542,7 @@ $stmt = $conn->prepare("
 $stmt->execute($paramsWithPagination);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+
 // Verificar se deve perguntar sobre impressão após criar OS
 $printOsData = null;
 if (!empty($_GET['print_os']) && is_numeric($_GET['print_os'])) {
@@ -669,7 +686,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
 .cancelled {background:#f44336;}
 
 /* Senha Desenho (Pattern Lock) */
-.pattern-lock-container {display:inline-block;}
+.pattern-lock-container {display:flex;flex-direction:column;align-items:center;}
 .pattern-grid-input {display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:120px;padding:10px;background:#f9f9f9;border:2px solid #ddd;border-radius:8px;}
 .pattern-dot {width:30px;height:30px;border:3px solid #999;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;user-select:none;}
 .pattern-dot span {font-size:10px;color:#999;font-weight:bold;}
@@ -930,13 +947,14 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <th>Aparelho</th>
                 <th>Status</th>
                 <th>Valor (R$)</th>
-                <th>Data</th>
+                <th>Data Entrada</th>
+                <th>Data Saída</th>
                 <th>Ações</th>
             </tr>
         </thead>
         <tbody>
             <?php if(empty($orders)): ?>
-                <tr><td colspan="7" class="empty">Nenhuma ordem de serviço cadastrada.</td></tr>
+                <tr><td colspan="8" class="empty">Nenhuma ordem de serviço cadastrada.</td></tr>
             <?php else: foreach($orders as $row): ?>
             <tr>
                 <td><strong>#<?= $row['id'] ?></strong></td>
@@ -950,8 +968,9 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <td><span class="badge <?= $row['status'] ?>"><?= traduzirStatus($row['status']) ?></span></td>
                 <td><strong><?= formatMoney($row['total_cost']) ?></strong></td>
                 <td><?= date('d/m/Y', strtotime($row['entry_datetime'])) ?></td>
+                <td><?= $row['exit_datetime'] ? date('d/m/Y', strtotime($row['exit_datetime'])) : '<span style="color:#ccc;">—</span>' ?></td>
                 <td>
-                    <button class="btn btn-primary btn-sm" onclick='printServiceOrder(<?= json_encode($row) ?>)' title="Imprimir">
+                    <button class="btn btn-primary btn-sm" onclick='printServiceOrder(<?= json_encode($row) ?>)' title="Imprimir (2 vias)">
                         <i class="fas fa-print"></i>
                     </button>
                     <?php if ($row['status'] !== 'delivered'): ?>
@@ -986,10 +1005,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <h2><i class="fas fa-plus-circle"></i> Nova Ordem de Serviço</h2>
             <button class="close" onclick="confirmCloseOS('createModal')">&times;</button>
         </div>
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="createOsForm" onsubmit="return validateOsForm('create')">
             <input type="hidden" name="action" value="add">
 
-            <!-- ROW 1: Cliente + Tipo + Modelo -->
+            <!-- ROW 1: Cliente + Tipo + Modelo + Data Entrada -->
             <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
                 <div style="flex:0 0 320px;">
                     <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Cliente * <a href="#" onclick="openQuickCustomerModal(event)" style="font-size:11px;color:#00b894;margin-left:6px;"><i class="fas fa-plus-circle"></i> Cadastrar novo</a></label>
@@ -1010,9 +1029,31 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <option value="outro">Outro</option>
                     </select>
                 </div>
-                <div style="flex:0 0 350px;">
+                <div style="flex:0 0 280px;">
                     <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;">Modelo do Aparelho *</label>
                     <input type="text" name="device" class="form-control" required placeholder="Ex: iPhone 13 Pro" style="font-size:13px;">
+                </div>
+                <div style="flex:0 0 190px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;"><i class="fas fa-calendar-plus" style="color:#667eea;"></i> Data Entrada</label>
+                    <input type="datetime-local" name="entry_datetime" id="create_entry_datetime" class="form-control" style="font-size:12px;">
+                </div>
+            </div>
+
+            <!-- ROW 1.5: Técnico + Atendente -->
+            <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
+                <div style="flex:0 0 350px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
+                        <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
+                </div>
+                <div style="flex:0 0 350px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
+                        <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1051,56 +1092,48 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <div id="create_tab_products" style="display:flex;gap:10px;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
                     <!-- LEFT: products/services -->
                     <div style="flex:1;min-width:0;">
-                        <!-- Adicionar Produto -->
-                        <div style="background:#f8f9ff;padding:10px;border-radius:8px;margin-bottom:8px;">
-                            <strong style="color:#667eea;font-size:12px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
-                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
-                                <div style="position:relative;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Produto</label>
-                                    <input type="text" id="create_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('create')" style="font-size:12px;">
-                                    <div id="create_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                                    <input type="hidden" id="create_selected_product_id">
-                                    <input type="hidden" id="create_selected_product_name">
-                                    <input type="hidden" id="create_selected_product_stock">
-                                </div>
-                                <div>
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço Unit. (R$)</label>
-                                    <input type="number" step="0.01" id="create_product_price_input" class="form-control" placeholder="0,00" style="font-size:12px;">
-                                </div>
-                                <div>
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
-                                    <input type="number" id="create_product_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
-                                </div>
-                                <div style="display:flex;flex-direction:column;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
-                                    <button type="button" class="btn btn-primary" onclick="addProductToOS('create')" style="width:100%;font-size:12px;flex:1;">
-                                        <i class="fas fa-plus"></i> Adicionar
-                                    </button>
-                                </div>
-                            </div>
+                        <!-- Campos ocultos: Produto (IDs mantidos para o JS existente) -->
+                        <div style="display:none;">
+                            <input type="text" id="create_product_search" autocomplete="off">
+                            <div id="create_product_results"></div>
+                            <input type="hidden" id="create_selected_product_id">
+                            <input type="hidden" id="create_selected_product_name">
+                            <input type="hidden" id="create_selected_product_stock">
+                            <input type="number" step="0.01" id="create_product_price_input">
+                            <input type="number" id="create_product_quantity" value="1" min="1">
                         </div>
-                        <!-- Adicionar Serviço -->
-                        <div style="background:#f0fff0;padding:10px;border-radius:8px;margin-bottom:8px;">
-                            <strong style="color:#4CAF50;font-size:12px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
-                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                        <!-- Campos ocultos: Serviço (IDs mantidos para o JS existente) -->
+                        <div style="display:none;">
+                            <input type="text" id="create_service_search" autocomplete="off">
+                            <div id="create_service_results"></div>
+                            <input type="hidden" id="create_selected_service_id">
+                            <input type="hidden" id="create_selected_service_name">
+                            <input type="number" step="0.01" id="create_service_price">
+                            <input type="number" id="create_service_quantity" value="1" min="1">
+                        </div>
+                        <!-- Busca Unificada: Produtos e Serviços -->
+                        <div style="background:#f5f5ff;padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid #e0e0ff;">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                <strong style="color:#555;font-size:12px;"><i class="fas fa-search"></i> Produtos e Serviços</strong>
+                                <span id="create_unified_badge" style="display:none;color:white;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;"></span>
+                            </div>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;align-items:end;">
                                 <div style="position:relative;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Serviço</label>
-                                    <input type="text" id="create_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('create')" style="font-size:12px;">
-                                    <div id="create_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                                    <input type="hidden" id="create_selected_service_id">
-                                    <input type="hidden" id="create_selected_service_name">
+                                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;"><i class="fas fa-box" style="color:#667eea;"></i> Produto &nbsp;/&nbsp; <i class="fas fa-tools" style="color:#4CAF50;"></i> Serviço</label>
+                                    <input type="text" id="create_unified_search" class="form-control" placeholder="Digite o nome do produto ou serviço..." autocomplete="off" oninput="searchUnified('create')" style="font-size:12px;">
+                                    <div id="create_unified_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
                                 </div>
                                 <div>
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço (R$)</label>
-                                    <input type="number" step="0.01" id="create_service_price" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                    <input type="number" step="0.01" id="create_unified_price" class="form-control" placeholder="0,00" style="font-size:12px;">
                                 </div>
                                 <div>
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
-                                    <input type="number" id="create_service_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                    <input type="number" id="create_unified_qty" class="form-control" value="1" min="1" style="font-size:12px;">
                                 </div>
                                 <div style="display:flex;flex-direction:column;">
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
-                                    <button type="button" class="btn btn-primary" onclick="addServiceToOS('create')" style="width:100%;font-size:12px;flex:1;background:linear-gradient(45deg,#4CAF50,#45a049);">
+                                    <button type="button" class="btn btn-primary" onclick="addUnifiedItem('create')" style="width:100%;font-size:12px;">
                                         <i class="fas fa-plus"></i> Adicionar
                                     </button>
                                 </div>
@@ -1147,7 +1180,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         </div>
                         <div>
                             <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-camera"></i> Foto do Aparelho</label>
-                            <input type="file" name="os_image" class="form-control" accept="image/*" style="font-size:11px;padding:3px;">
+                            <input type="file" name="os_image" id="create_os_image_input" class="form-control" accept="image/*" style="font-size:11px;padding:3px;" onchange="previewOsImage('create', this)">
+                            <div id="create_os_image_preview" style="display:none;margin-top:6px;">
+                                <img id="create_os_image_thumb" src="" alt="Preview" style="max-width:100%;max-height:80px;border-radius:6px;border:2px solid #ddd;cursor:zoom-in;" onclick="openImageZoom(this.src)">
+                                <button type="button" onclick="clearOsImagePreview()" class="btn btn-danger btn-sm" style="display:block;margin-top:4px;font-size:10px;padding:3px 8px;"><i class="fas fa-trash"></i> Remover</button>
+                            </div>
                             <small style="color:#888;font-size:10px;">Registro interno, não será impresso</small>
                         </div>
                     </div>
@@ -1234,33 +1271,103 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 ['create', 'edit'].forEach(function(mode) {
                     var prodResults = document.getElementById(mode + '_product_results');
                     var servResults = document.getElementById(mode + '_service_results');
+                    var unifiedResults = document.getElementById(mode + '_unified_results');
                     if (!e.target.closest('#' + mode + '_product_search') && !e.target.closest('#' + mode + '_product_results')) { if (prodResults) prodResults.style.display = 'none'; }
                     if (!e.target.closest('#' + mode + '_service_search') && !e.target.closest('#' + mode + '_service_results')) { if (servResults) servResults.style.display = 'none'; }
+                    if (!e.target.closest('#' + mode + '_unified_search') && !e.target.closest('#' + mode + '_unified_results')) { if (unifiedResults) unifiedResults.style.display = 'none'; }
                 });
             });
+
+            // ── Busca Unificada (Produtos + Serviços) ──────────────────────────
+            const unifiedSelectedType = { create: null, edit: null };
+
+            function searchUnified(mode) {
+                const input = document.getElementById(mode + '_unified_search');
+                const resultsDiv = document.getElementById(mode + '_unified_results');
+                const term = input.value.toLowerCase().trim();
+                if (term.length < 2) { resultsDiv.style.display = 'none'; return; }
+                const allItems = availableProducts.filter(p => p.name.toLowerCase().includes(term));
+                if (allItems.length === 0) {
+                    resultsDiv.innerHTML = '<div style="padding:10px;color:#999;">Nenhum item encontrado</div>';
+                    resultsDiv.style.display = 'block';
+                    return;
+                }
+                let html = '';
+                allItems.forEach(p => {
+                    const isService = (p.type || 'product') === 'service';
+                    if (!isService) {
+                        const outOfStock = parseInt(p.stock_quantity) <= 0;
+                        const badge = '<span style="background:#667eea;color:white;padding:1px 7px;border-radius:8px;font-size:0.65rem;margin-right:6px;">PRODUTO</span>';
+                        if (outOfStock) {
+                            html += `<div style="padding:10px;border-bottom:1px solid #f0f0f0;opacity:0.7;cursor:not-allowed;background:#fff5f5;">${badge}<strong style="color:#999;">${p.name}</strong> <span style="background:#ff4444;color:white;padding:2px 8px;border-radius:10px;font-size:0.7rem;">SEM ESTOQUE</span><br><small style="color:#999;">R$ ${parseFloat(p.price).toFixed(2).replace('.',',')} · Estoque: 0</small></div>`;
+                        } else {
+                            html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;" onmouseover="this.style.background='#f8f9ff'" onmouseout="this.style.background='white'" onclick="selectProductUnified('${mode}',${p.id},'${p.name.replace(/'/g,"\\'")}',${p.price},${p.stock_quantity},${p.allow_price_edit||0})">${badge}<strong>${p.name}</strong><br><small style="color:#666;">R$ ${parseFloat(p.price).toFixed(2).replace('.',',')} · Estoque: ${p.stock_quantity}</small></div>`;
+                        }
+                    } else {
+                        const priceVal = p.price ? parseFloat(p.price) : null;
+                        const priceText = priceVal ? 'R$ ' + priceVal.toFixed(2).replace('.',',') : 'Preço a definir';
+                        const badge = '<span style="background:#4CAF50;color:white;padding:1px 7px;border-radius:8px;font-size:0.65rem;margin-right:6px;">SERVIÇO</span>';
+                        html += `<div style="padding:10px;cursor:pointer;border-bottom:1px solid #f0f0f0;" onmouseover="this.style.background='#f0fff0'" onmouseout="this.style.background='white'" onclick="selectServiceUnified('${mode}',${p.id},'${p.name.replace(/'/g,"\\'")}',${priceVal||'null'},${p.allow_price_edit||0})">${badge}<strong>${p.name}</strong><br><small style="color:#666;">${priceText}</small></div>`;
+                    }
+                });
+                resultsDiv.innerHTML = html;
+                resultsDiv.style.display = 'block';
+            }
+
+            function selectProductUnified(mode, id, name, price, stock, allowPriceEdit) {
+                selectProduct(mode, id, name, price, stock, allowPriceEdit);
+                document.getElementById(mode + '_unified_search').value = name;
+                const priceInput = document.getElementById(mode + '_unified_price');
+                priceInput.value = parseFloat(price).toFixed(2);
+                if (parseInt(allowPriceEdit) === 1) { priceInput.readOnly = false; priceInput.style.background = ''; }
+                else { priceInput.readOnly = true; priceInput.style.background = '#e9ecef'; }
+                document.getElementById(mode + '_unified_results').style.display = 'none';
+                unifiedSelectedType[mode] = 'product';
+                const badge = document.getElementById(mode + '_unified_badge');
+                badge.textContent = '📦 Produto'; badge.style.background = '#667eea'; badge.style.display = 'inline-block';
+            }
+
+            function selectServiceUnified(mode, id, name, price, allowPriceEdit) {
+                selectService(mode, id, name, price, allowPriceEdit);
+                document.getElementById(mode + '_unified_search').value = name;
+                const priceInput = document.getElementById(mode + '_unified_price');
+                priceInput.value = price ? parseFloat(price).toFixed(2) : '';
+                if (parseInt(allowPriceEdit) === 1) { priceInput.readOnly = false; priceInput.style.background = ''; }
+                else { priceInput.readOnly = true; priceInput.style.background = '#e9ecef'; }
+                document.getElementById(mode + '_unified_results').style.display = 'none';
+                unifiedSelectedType[mode] = 'service';
+                const badge = document.getElementById(mode + '_unified_badge');
+                badge.textContent = '🔧 Serviço'; badge.style.background = '#4CAF50'; badge.style.display = 'inline-block';
+            }
+
+            function addUnifiedItem(mode) {
+                const type = unifiedSelectedType[mode];
+                if (!type) { showAlert('Selecione um produto ou serviço', 'warning'); return; }
+                const price = document.getElementById(mode + '_unified_price').value;
+                const qty   = document.getElementById(mode + '_unified_qty').value;
+                if (type === 'product') {
+                    document.getElementById(mode + '_product_price_input').value = price;
+                    document.getElementById(mode + '_product_quantity').value = qty;
+                    addProductToOS(mode);
+                } else {
+                    document.getElementById(mode + '_service_price').value = price;
+                    document.getElementById(mode + '_service_quantity').value = qty;
+                    addServiceToOS(mode);
+                }
+                document.getElementById(mode + '_unified_search').value = '';
+                document.getElementById(mode + '_unified_price').value = '';
+                document.getElementById(mode + '_unified_price').readOnly = false;
+                document.getElementById(mode + '_unified_price').style.background = '';
+                document.getElementById(mode + '_unified_qty').value = '1';
+                unifiedSelectedType[mode] = null;
+                document.getElementById(mode + '_unified_badge').style.display = 'none';
+            }
             </script>
 
                 <!-- TAB: Pagamento -->
                 <div id="create_tab_payment" style="display:none;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
-                    <!-- Responsáveis -->
-                    <div style="display:flex;gap:30px;margin-bottom:10px;">
-                        <div style="flex:0 0 350px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
-                            <div style="position:relative;">
-                                <input type="text" name="technician_name" id="createTechnicianSearch" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
-                                <div id="createTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                            </div>
-                        </div>
-                        <div style="flex:0 0 350px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
-                            <div style="position:relative;">
-                                <input type="text" name="attendant_name" id="createAttendantSearch" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
-                                <div id="createAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                            </div>
-                        </div>
-                    </div>
                     <!-- Resumo Financeiro -->
-                    <div id="create_financial_summary" style="background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
+                    <div id="create_financial_summary" style="display:none;background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #e0e0e0;">
                             <div style="text-align:center;">
                                 <small style="color:#667eea;font-weight:bold;">Produtos</small>
@@ -1356,27 +1463,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </div>
                     <div id="create_payments_list"></div>
                     <input type="hidden" name="payment_methods" id="create_payment_methods_data" value="[]">
-                    <!-- Garantia -->
-                    <div style="display:flex;gap:16px;align-items:flex-end;margin-top:10px;">
-                        <div style="flex:0 0 300px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-shield-alt"></i> Período de Garantia</label>
-                            <select name="warranty_period" class="form-control" style="font-size:12px;">
-                                <option value="30 dias">30 dias</option>
-                                <option value="60 dias">60 dias</option>
-                                <option value="90 dias" selected>90 dias (Padrão)</option>
-                                <option value="3 meses">3 meses</option>
-                                <option value="4 meses">4 meses</option>
-                                <option value="6 meses">6 meses</option>
-                                <option value="1 ano">1 ano</option>
-                                <option value="Sem garantia">Sem garantia</option>
-                            </select>
-                        </div>
-                        <div style="flex:0 0 auto;">
-                            <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space:nowrap;font-size:12px;">
-                                <i class="fas fa-cog"></i> Configurar Termos
-                            </button>
-                        </div>
-                    </div>
+                    <input type="hidden" name="warranty_period" value="<?= htmlspecialchars($warrantyDefault) ?>">
                 </div>
             </div>
 
@@ -1402,6 +1489,10 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;">Total Pago</div>
                     <div id="create_footer_pago" style="font-size:14px;font-weight:bold;color:#2E7D32;">R$ 0,00</div>
                 </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fdecea;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#c0392b;text-transform:uppercase;">Restante</div>
+                    <div id="create_footer_restante" style="font-size:14px;font-weight:bold;color:#c0392b;">R$ 0,00</div>
+                </div>
                 <div style="flex:1;text-align:center;padding:8px;background:#fff8e1;">
                     <div style="font-size:10px;font-weight:700;color:#FF9800;text-transform:uppercase;">Troco</div>
                     <div id="create_footer_troco" style="font-size:14px;font-weight:bold;color:#FF9800;">R$ 0,00</div>
@@ -1423,7 +1514,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <h2><i class="fas fa-edit"></i> Editar Ordem de Serviço</h2>
             <button class="close" onclick="confirmCloseOS('editModal')">&times;</button>
         </div>
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="editOsForm" onsubmit="return validateOsForm('edit')">
             <input type="hidden" name="action" value="edit">
             <input type="hidden" name="id" id="edit_id">
 
@@ -1464,6 +1555,35 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </select>
                 </div>
             </div>
+            <!-- ROW 1b: Data Entrada + Data Saída -->
+            <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
+                <div style="flex:0 0 220px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;"><i class="fas fa-calendar-plus" style="color:#667eea;"></i> Data Entrada</label>
+                    <input type="datetime-local" name="entry_datetime" id="edit_entry_datetime" class="form-control" style="font-size:12px;">
+                </div>
+                <div style="flex:0 0 220px;">
+                    <label style="font-size:12px;font-weight:600;margin-bottom:3px;display:block;"><i class="fas fa-calendar-check" style="color:#4CAF50;"></i> Data Saída</label>
+                    <input type="datetime-local" name="exit_datetime" id="edit_exit_datetime" class="form-control" style="font-size:12px;">
+                </div>
+            </div>
+
+            <!-- ROW 1.5: Técnico + Atendente -->
+            <div style="display:flex;gap:30px;margin-bottom:8px;align-items:flex-end;">
+                <div style="flex:0 0 350px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
+                        <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
+                </div>
+                <div style="flex:0 0 350px;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
+                    <div style="position:relative;">
+                        <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
+                        <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
 
             <!-- ROW 2: 4 textareas side by side -->
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:30px;margin-bottom:10px;">
@@ -1499,56 +1619,48 @@ tr:hover {background:rgba(103,58,183,0.1);}
                 <div id="edit_tab_products" style="display:flex;gap:10px;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
                     <!-- LEFT: products/services -->
                     <div style="flex:1;min-width:0;">
-                        <!-- Adicionar Produto -->
-                        <div style="background:#f8f9ff;padding:10px;border-radius:8px;margin-bottom:8px;">
-                            <strong style="color:#667eea;font-size:12px;"><i class="fas fa-box"></i> Adicionar Produto</strong>
-                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
-                                <div style="position:relative;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Produto</label>
-                                    <input type="text" id="edit_product_search" class="form-control" placeholder="Digite o nome do produto..." autocomplete="off" oninput="searchProducts('edit')" style="font-size:12px;">
-                                    <div id="edit_product_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                                    <input type="hidden" id="edit_selected_product_id">
-                                    <input type="hidden" id="edit_selected_product_name">
-                                    <input type="hidden" id="edit_selected_product_stock">
-                                </div>
-                                <div>
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço Unit. (R$)</label>
-                                    <input type="number" step="0.01" id="edit_product_price_input" class="form-control" placeholder="0,00" style="font-size:12px;">
-                                </div>
-                                <div>
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
-                                    <input type="number" id="edit_product_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
-                                </div>
-                                <div style="display:flex;flex-direction:column;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
-                                    <button type="button" class="btn btn-primary" onclick="addProductToOS('edit')" style="width:100%;font-size:12px;flex:1;">
-                                        <i class="fas fa-plus"></i> Adicionar
-                                    </button>
-                                </div>
-                            </div>
+                        <!-- Campos ocultos: Produto (IDs mantidos para o JS existente) -->
+                        <div style="display:none;">
+                            <input type="text" id="edit_product_search" autocomplete="off">
+                            <div id="edit_product_results"></div>
+                            <input type="hidden" id="edit_selected_product_id">
+                            <input type="hidden" id="edit_selected_product_name">
+                            <input type="hidden" id="edit_selected_product_stock">
+                            <input type="number" step="0.01" id="edit_product_price_input">
+                            <input type="number" id="edit_product_quantity" value="1" min="1">
                         </div>
-                        <!-- Adicionar Serviço -->
-                        <div style="background:#f0fff0;padding:10px;border-radius:8px;margin-bottom:8px;">
-                            <strong style="color:#4CAF50;font-size:12px;"><i class="fas fa-tools"></i> Adicionar Serviço</strong>
-                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;margin-top:8px;align-items:end;">
+                        <!-- Campos ocultos: Serviço (IDs mantidos para o JS existente) -->
+                        <div style="display:none;">
+                            <input type="text" id="edit_service_search" autocomplete="off">
+                            <div id="edit_service_results"></div>
+                            <input type="hidden" id="edit_selected_service_id">
+                            <input type="hidden" id="edit_selected_service_name">
+                            <input type="number" step="0.01" id="edit_service_price">
+                            <input type="number" id="edit_service_quantity" value="1" min="1">
+                        </div>
+                        <!-- Busca Unificada: Produtos e Serviços -->
+                        <div style="background:#f5f5ff;padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid #e0e0ff;">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                <strong style="color:#555;font-size:12px;"><i class="fas fa-search"></i> Produtos e Serviços</strong>
+                                <span id="edit_unified_badge" style="display:none;color:white;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;"></span>
+                            </div>
+                            <div style="display:grid;grid-template-columns:6fr 1.5fr 1fr 1.5fr;gap:30px;align-items:end;">
                                 <div style="position:relative;">
-                                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Buscar Serviço</label>
-                                    <input type="text" id="edit_service_search" class="form-control" placeholder="Digite o nome do serviço..." autocomplete="off" oninput="searchServices('edit')" style="font-size:12px;">
-                                    <div id="edit_service_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
-                                    <input type="hidden" id="edit_selected_service_id">
-                                    <input type="hidden" id="edit_selected_service_name">
+                                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;"><i class="fas fa-box" style="color:#667eea;"></i> Produto &nbsp;/&nbsp; <i class="fas fa-tools" style="color:#4CAF50;"></i> Serviço</label>
+                                    <input type="text" id="edit_unified_search" class="form-control" placeholder="Digite o nome do produto ou serviço..." autocomplete="off" oninput="searchUnified('edit')" style="font-size:12px;">
+                                    <div id="edit_unified_results" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:8px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>
                                 </div>
                                 <div>
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Preço (R$)</label>
-                                    <input type="number" step="0.01" id="edit_service_price" class="form-control" placeholder="0,00" style="font-size:12px;">
+                                    <input type="number" step="0.01" id="edit_unified_price" class="form-control" placeholder="0,00" style="font-size:12px;">
                                 </div>
                                 <div>
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Qtd</label>
-                                    <input type="number" id="edit_service_quantity" class="form-control" value="1" min="1" style="font-size:12px;">
+                                    <input type="number" id="edit_unified_qty" class="form-control" value="1" min="1" style="font-size:12px;">
                                 </div>
                                 <div style="display:flex;flex-direction:column;">
                                     <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;visibility:hidden;">.</label>
-                                    <button type="button" class="btn btn-primary" onclick="addServiceToOS('edit')" style="width:100%;font-size:12px;flex:1;background:linear-gradient(45deg,#4CAF50,#45a049);">
+                                    <button type="button" class="btn btn-primary" onclick="addUnifiedItem('edit')" style="width:100%;font-size:12px;">
                                         <i class="fas fa-plus"></i> Adicionar
                                     </button>
                                 </div>
@@ -1596,11 +1708,11 @@ tr:hover {background:rgba(103,58,183,0.1);}
                         <div>
                             <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-camera"></i> Foto do Aparelho</label>
                             <div id="edit_os_image_preview" style="display:none;margin-bottom:6px;">
-                                <img id="edit_os_image_thumb" src="" style="max-width:100%;max-height:80px;border-radius:6px;border:2px solid #ddd;">
+                                <img id="edit_os_image_thumb" src="" style="max-width:100%;max-height:80px;border-radius:6px;border:2px solid #ddd;cursor:zoom-in;" onclick="openImageZoom(this.src)">
                                 <button type="button" class="btn btn-danger btn-sm" onclick="removeOsImage('edit')" style="margin-top:4px;font-size:10px;padding:3px 8px;"><i class="fas fa-trash"></i> Remover</button>
                                 <input type="hidden" name="remove_os_image" id="edit_remove_os_image" value="">
                             </div>
-                            <input type="file" name="os_image" class="form-control" accept="image/*" style="font-size:11px;padding:3px;">
+                            <input type="file" name="os_image" id="edit_os_image_input" class="form-control" accept="image/*" style="font-size:11px;padding:3px;" onchange="previewOsImage('edit', this)">
                             <small style="color:#888;font-size:10px;">Registro interno, não será impresso</small>
                         </div>
                     </div>
@@ -1608,25 +1720,8 @@ tr:hover {background:rgba(103,58,183,0.1);}
 
                 <!-- TAB: Pagamento -->
                 <div id="edit_tab_payment" style="display:none;padding:10px;background:#fafafa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
-                    <!-- Responsáveis -->
-                    <div style="display:flex;gap:30px;margin-bottom:10px;">
-                        <div style="flex:0 0 350px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-wrench"></i> Técnico Responsável</label>
-                            <div style="position:relative;">
-                                <input type="text" name="technician_name" id="edit_technician_name" class="form-control" placeholder="Buscar técnico..." autocomplete="off" style="font-size:12px;">
-                                <div id="editTechnicianSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                            </div>
-                        </div>
-                        <div style="flex:0 0 350px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-user"></i> Atendente Responsável</label>
-                            <div style="position:relative;">
-                                <input type="text" name="attendant_name" id="edit_attendant_name" class="form-control" placeholder="Buscar atendente..." autocomplete="off" style="font-size:12px;">
-                                <div id="editAttendantSuggestions" class="os-autocomplete-suggestions" style="display:none;"></div>
-                            </div>
-                        </div>
-                    </div>
                     <!-- Resumo Financeiro -->
-                    <div id="edit_financial_summary" style="background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
+                    <div id="edit_financial_summary" style="display:none;background:#f8f9ff;padding:12px;border-radius:8px;margin-bottom:10px;">
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px 10px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #e0e0e0;">
                             <div style="text-align:center;">
                                 <small style="color:#667eea;font-weight:bold;">Produtos</small>
@@ -1722,27 +1817,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     </div>
                     <div id="edit_payments_list"></div>
                     <input type="hidden" name="payment_methods" id="edit_payment_methods_data" value="[]">
-                    <!-- Garantia -->
-                    <div style="display:flex;gap:16px;align-items:flex-end;margin-top:10px;">
-                        <div style="flex:0 0 300px;">
-                            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:3px;"><i class="fas fa-shield-alt"></i> Período de Garantia</label>
-                            <select name="warranty_period" id="edit_warranty_period" class="form-control" style="font-size:12px;">
-                                <option value="30 dias">30 dias</option>
-                                <option value="60 dias">60 dias</option>
-                                <option value="90 dias">90 dias (Padrão)</option>
-                                <option value="3 meses">3 meses</option>
-                                <option value="4 meses">4 meses</option>
-                                <option value="6 meses">6 meses</option>
-                                <option value="1 ano">1 ano</option>
-                                <option value="Sem garantia">Sem garantia</option>
-                            </select>
-                        </div>
-                        <div style="flex:0 0 auto;">
-                            <button type="button" class="btn btn-secondary" onclick="window.open('../settings/warranty_config.php', '_blank')" style="white-space:nowrap;font-size:12px;">
-                                <i class="fas fa-cog"></i> Configurar Termos
-                            </button>
-                        </div>
-                    </div>
+                    <input type="hidden" name="warranty_period" id="edit_warranty_period" value="<?= htmlspecialchars($warrantyDefault) ?>">
                 </div>
             </div>
 
@@ -1768,13 +1843,17 @@ tr:hover {background:rgba(103,58,183,0.1);}
                     <div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;">Total Pago</div>
                     <div id="edit_footer_pago" style="font-size:14px;font-weight:bold;color:#2E7D32;">R$ 0,00</div>
                 </div>
+                <div style="flex:1;text-align:center;padding:8px;background:#fdecea;border-right:1px solid #e0e0e0;">
+                    <div style="font-size:10px;font-weight:700;color:#c0392b;text-transform:uppercase;">Restante</div>
+                    <div id="edit_footer_restante" style="font-size:14px;font-weight:bold;color:#c0392b;">R$ 0,00</div>
+                </div>
                 <div style="flex:1;text-align:center;padding:8px;background:#fff8e1;">
                     <div style="font-size:10px;font-weight:700;color:#FF9800;text-transform:uppercase;">Troco</div>
                     <div id="edit_footer_troco" style="font-size:14px;font-weight:bold;color:#FF9800;">R$ 0,00</div>
                 </div>
             </div>
 
-            <div style="text-align:right;margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
+            <div style="margin-top:12px;display:flex;gap:10px;justify-content:flex-end;align-items:center;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Atualizar</button>
                 <button type="button" class="btn btn-danger" onclick="confirmCloseOS('editModal')"><i class="fas fa-times"></i> Cancelar</button>
             </div>
@@ -1823,7 +1902,24 @@ const osCustomers = <?php echo json_encode($customers); ?>;
 const osTechnicians = <?php echo json_encode($technicians); ?>;
 const osAttendants = <?php echo json_encode($attendants); ?>;
 
-function openModal(id){document.getElementById(id).style.display='block';}
+function nowDatetimeLocal() {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+}
+function toDatetimeLocal(str) {
+    if (!str) return '';
+    const d = new Date(str);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+}
+function openModal(id) {
+    document.getElementById(id).style.display = 'block';
+    if (id === 'createModal') {
+        const f = document.getElementById('create_entry_datetime');
+        if (f && !f.value) f.value = nowDatetimeLocal();
+    }
+}
 function closeModal(id){document.getElementById(id).style.display='none';}
 
 // ===== AUTOCOMPLETE GENÉRICO =====
@@ -2253,14 +2349,21 @@ function updateFinancialBalance(mode) {
     const footerDesconto = document.getElementById(mode + '_footer_desconto');
     const footerLiquido = document.getElementById(mode + '_footer_liquido');
     const footerItens = document.getElementById(mode + '_footer_itens');
-    const footerPago = document.getElementById(mode + '_footer_pago');
-    const footerTroco = document.getElementById(mode + '_footer_troco');
-    if (footerBruto) footerBruto.textContent = fmt(bruto);
+    const footerPago      = document.getElementById(mode + '_footer_pago');
+    const footerTroco     = document.getElementById(mode + '_footer_troco');
+    const footerRestante  = document.getElementById(mode + '_footer_restante');
+    if (footerBruto)   footerBruto.textContent    = fmt(bruto);
     if (footerDesconto) footerDesconto.textContent = fmt(discount);
-    if (footerLiquido) footerLiquido.textContent = fmt(total);
-    if (footerItens) footerItens.textContent = items.reduce((s, i) => s + i.quantity, 0);
-    if (footerPago) footerPago.textContent = fmt(totalPago);
-    if (footerTroco) footerTroco.textContent = fmt(totalChange);
+    if (footerLiquido) footerLiquido.textContent   = fmt(total);
+    if (footerItens)   footerItens.textContent     = items.reduce((s, i) => s + i.quantity, 0);
+    if (footerPago)    footerPago.textContent      = fmt(totalPago);
+    if (footerTroco)   footerTroco.textContent     = fmt(totalChange);
+    if (footerRestante) {
+        const restante = Math.max(0, total - totalPago);
+        footerRestante.textContent = fmt(restante);
+        footerRestante.style.color = restante > 0 ? '#c0392b' : '#27ae60';
+        footerRestante.parentElement.style.background = restante > 0 ? '#fdecea' : '#eafaf1';
+    }
 }
 
 function switchTab(mode, tab) {
@@ -2318,6 +2421,10 @@ function openEditModal(o){
             if (dot) dot.classList.add('active');
         });
     }
+
+    // Datas de entrada e saída
+    document.getElementById('edit_entry_datetime').value = toDatetimeLocal(o.entry_datetime);
+    document.getElementById('edit_exit_datetime').value = toDatetimeLocal(o.exit_datetime);
 
     // Foto do aparelho
     const previewDiv = document.getElementById('edit_os_image_preview');
@@ -2439,6 +2546,23 @@ function printServiceOrder(order) {
         showAlert('Erro ao carregar dados para impressão', 'error');
     });
 }
+
+function validateOsForm(mode) {
+    const pmData = document.getElementById(mode + '_payment_methods_data');
+    if (!pmData) return true;
+
+    let payments = [];
+    try { payments = JSON.parse(pmData.value || '[]'); } catch(e) {}
+
+    if (payments.length === 0) {
+        showAlert('Informe ao menos uma forma de pagamento antes de salvar.', 'warning');
+        // Abrir aba de pagamento para facilitar
+        switchTab(mode, 'payment');
+        return false;
+    }
+    return true;
+}
+
 
 function generateServiceOrderPrint(order, customer, warrantyTerms) {
     const printWindow = window.open('', '_blank');
@@ -3028,6 +3152,35 @@ function updatePattern(mode) {
 function removeOsImage(mode) {
     document.getElementById(mode + '_remove_os_image').value = '1';
     document.getElementById(mode + '_os_image_preview').style.display = 'none';
+    const inp = document.getElementById(mode + '_os_image_input');
+    if (inp) inp.value = '';
+}
+
+// Preview de foto da OS
+function previewOsImage(mode, input) {
+    if (!input.files || !input.files[0]) return;
+    const url = URL.createObjectURL(input.files[0]);
+    const thumb = document.getElementById(mode + '_os_image_thumb');
+    const preview = document.getElementById(mode + '_os_image_preview');
+    thumb.src = url;
+    preview.style.display = 'block';
+}
+
+function clearOsImagePreview() {
+    const inp = document.getElementById('create_os_image_input');
+    if (inp) inp.value = '';
+    document.getElementById('create_os_image_thumb').src = '';
+    document.getElementById('create_os_image_preview').style.display = 'none';
+}
+
+// Lightbox zoom de imagem
+function openImageZoom(src) {
+    document.getElementById('osImageZoomImg').src = src;
+    document.getElementById('osImageZoomModal').style.display = 'flex';
+}
+function closeImageZoom() {
+    document.getElementById('osImageZoomModal').style.display = 'none';
+    document.getElementById('osImageZoomImg').src = '';
 }
 
 // ---- CADASTRO RÁPIDO DE CLIENTE ----
@@ -3163,6 +3316,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php endif; ?>
+
+<!-- Lightbox: Zoom de Foto do Aparelho -->
+<div id="osImageZoomModal" onclick="if(event.target===this)closeImageZoom()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;align-items:center;justify-content:center;">
+    <div style="position:relative;max-width:90vw;max-height:90vh;">
+        <button onclick="closeImageZoom()" style="position:absolute;top:-14px;right:-14px;background:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;font-weight:bold;line-height:1;color:#333;box-shadow:0 2px 8px rgba(0,0,0,0.4);">&times;</button>
+        <img id="osImageZoomImg" src="" alt="Foto do Aparelho" style="max-width:90vw;max-height:90vh;border-radius:8px;display:block;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    </div>
+</div>
 
 </body>
 </html>

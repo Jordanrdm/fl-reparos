@@ -21,33 +21,6 @@ try {
     );
     $todaySales = $stmt->fetch()['total_sales'];
 
-    // Caixa atual (últimos movimentos)
-    $stmt = $database->query(
-        "SELECT COALESCE(SUM(
-            CASE 
-                WHEN type IN ('sale', 'service') THEN amount 
-                WHEN type = 'expense' THEN -amount 
-                ELSE amount 
-            END
-        ), 0) as cash_balance 
-        FROM cash_flow 
-        WHERE DATE(created_at) = ?",
-        [$today]
-    );
-    $currentCash = $stmt->fetch()['cash_balance'];
-
-    // OS Abertas
-    $stmt = $database->query(
-        "SELECT COUNT(*) as open_orders 
-         FROM service_orders 
-         WHERE status IN ('open', 'in_progress')"
-    );
-    $openOrders = $stmt->fetch()['open_orders'];
-
-    // Total de clientes
-    $stmt = $database->query("SELECT COUNT(*) as total_customers FROM customers");
-    $totalCustomers = $stmt->fetch()['total_customers'];
-
     // Status do caixa atual
     $stmt = $database->query(
         "SELECT id, status, opening_balance, opening_date, closing_date, closing_balance
@@ -57,6 +30,33 @@ try {
         [$_SESSION['user_id']]
     );
     $cashRegister = $stmt->fetch();
+
+    // Caixa atual: só calcula se o caixa estiver ABERTO
+    $currentCash = 0;
+    if ($cashRegister && $cashRegister['status'] === 'open') {
+        $stmt = $database->query(
+            "SELECT
+                COALESCE(SUM(CASE WHEN type IN ('sale','entry','service') THEN amount ELSE 0 END), 0) as entries,
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as exits
+             FROM cash_flow
+             WHERE created_at >= ?",
+            [$cashRegister['opening_date']]
+        );
+        $t = $stmt->fetch();
+        $currentCash = $cashRegister['opening_balance'] + $t['entries'] - $t['exits'];
+    }
+
+    // OS Abertas
+    $stmt = $database->query(
+        "SELECT COUNT(*) as open_orders
+         FROM service_orders
+         WHERE status IN ('open', 'in_progress')"
+    );
+    $openOrders = $stmt->fetch()['open_orders'];
+
+    // Total de clientes
+    $stmt = $database->query("SELECT COUNT(*) as total_customers FROM customers");
+    $totalCustomers = $stmt->fetch()['total_customers'];
 
 } catch (Exception $e) {
     // Valores padrão em caso de erro
@@ -92,11 +92,6 @@ include 'includes/header.php';
                 Vendas Hoje
                 <button onclick="toggleValue('sales')" id="eye-sales" title="Mostrar/Ocultar" style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;padding:0;line-height:1;"><i class="fas fa-eye"></i></button>
             </div>
-            <?php if(isAdmin()): ?>
-                <button type="button" id="btn-zero-sales" title="Zerar exibição de vendas de hoje" onclick="zeroDisplay('sales')" style="position:absolute;top:10px;right:10px;background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-            <?php endif; ?>
         </div>
 
         <div class="stat-card" style="position:relative;">
@@ -119,11 +114,6 @@ include 'includes/header.php';
                     <i class="fas <?= $caixaIcon ?>"></i> <?= $caixaLabel ?>
                 </span>
             </div>
-            <?php if(isAdmin()): ?>
-                <button type="button" id="btn-zero-cash" title="Zerar exibição do caixa atual" onclick="zeroDisplay('cash')" style="position:absolute;top:10px;right:10px;background:#f44336;color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-            <?php endif; ?>
         </div>
         
         <div class="stat-card">

@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     try {
         $newConfig = [
             'title' => $_POST['title'] ?? 'TERMOS DE GARANTIA',
+            'default_period' => $_POST['default_period'] ?? '90 dias',
             'clauses' => [],
             'footer' => $_POST['footer'] ?? ''
         ];
@@ -243,6 +244,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <input type="hidden" name="action" value="save">
 
             <div class="form-group">
+                <label for="default_period">
+                    <i class="fas fa-clock"></i> Período Padrão de Garantia
+                </label>
+                <select id="default_period" name="default_period" style="width:auto;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;font-family:inherit;transition:border-color 0.3s;appearance:auto;">
+                    <?php
+                    $periods = ['30 dias','60 dias','90 dias','3 meses','4 meses','6 meses','1 ano','Sem garantia'];
+                    $currentPeriod = $warrantyConfig['default_period'] ?? '90 dias';
+                    foreach ($periods as $p):
+                    ?>
+                    <option value="<?= $p ?>" <?= $currentPeriod === $p ? 'selected' : '' ?>><?= $p ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="help-text">
+                    <i class="fas fa-info-circle"></i> Este período será usado automaticamente em todas as novas Ordens de Serviço
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label for="title">
                     <i class="fas fa-heading"></i> Título da Seção de Garantia
                 </label>
@@ -295,10 +314,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <i class="fas fa-save"></i>
                     Salvar Alterações
                 </button>
-                <a href="../service_orders/index.php" class="btn btn-secondary">
+                <button type="button" class="btn btn-secondary" onclick="history.back()">
                     <i class="fas fa-arrow-left"></i>
                     Voltar
-                </a>
+                </button>
             </div>
         </form>
     </div>

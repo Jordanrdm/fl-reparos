@@ -394,7 +394,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
             ];
         }, $movements)) ?>;
 
-        var _typeLabels = {sale:'Venda',service:'Serviço',entry:'Entrada',expense:'Despesa'};
+        var _typeLabels = {sale:'<i class="fas fa-shopping-cart"></i> Venda',service:'<i class="fas fa-tools"></i> Serviço',entry:'<i class="fas fa-arrow-up"></i> Entrada',expense:'<i class="fas fa-arrow-down"></i> Despesa'};
         var _page = 1, _pageSize = 15;
 
         function render(){
@@ -538,9 +538,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
                 <div class="form-group">
                     <label>Tipo *</label>
                     <select name="type" class="form-control" required>
-                        <option value="">Selecione</option>
                         <option value="entry">Entrada / Reforço</option>
-                        <option value="expense">Saída / Despesa / Sangria</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -550,7 +548,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
             </div>
             <div class="form-group">
                 <label>Descrição *</label>
-                <input type="text" name="description" class="form-control" required placeholder="Ex: Sangria, Reforço de troco, Pagamento fornecedor...">
+                <input type="text" name="description" class="form-control" placeholder="Ex: Reforço de troco, Pagamento fornecedor...">
             </div>
             <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
                 <button type="button" class="btn btn-gray" onclick="closeModal('mdMovement')"><i class="fas fa-times"></i> Cancelar</button>

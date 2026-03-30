@@ -422,6 +422,7 @@ tr:hover {background:rgba(103,58,183,0.1);}
             <?php elseif($activeTab === 'attendants'): ?>
                 <button class="btn btn-primary" onclick="openModal('createAttModal')"><i class="fas fa-user-plus"></i> Novo Atendente</button>
             <?php endif; ?>
+            <a href="../settings/warranty_config.php" class="btn btn-secondary" title="Configurar termos de garantia da OS"><i class="fas fa-shield-alt"></i> Termos de Garantia</a>
             <a href="../../index.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
     </div>

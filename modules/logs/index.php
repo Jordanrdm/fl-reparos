@@ -221,10 +221,14 @@ function buildUrl($extra = []) {
         .btn-close { background: none; border: none; color: white; font-size: 1.8rem; cursor: pointer; line-height: 1; }
         .modal-body { padding: 24px; }
         .diff-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        .diff-table th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-size: 0.85rem; color: #555; }
+        .diff-table th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-size: 0.85rem; color: #555; border-bottom: 2px solid #e0e0e0; }
+        .diff-table th.th-old { background: #fff0f0; color: #c0392b; }
+        .diff-table th.th-new { background: #f0fff4; color: #27ae60; }
         .diff-table td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
-        .diff-old { background: #fff5f5; color: #c0392b; }
-        .diff-new { background: #f0fff4; color: #27ae60; }
+        .diff-table td.col-old { background: #fff7f7; color: #888; }
+        .diff-table td.col-new { background: #f7fff9; color: #888; }
+        .diff-old { background: #ffe0e0 !important; color: #c0392b !important; font-weight: 600; }
+        .diff-new { background: #d4f5e2 !important; color: #1e8449 !important; font-weight: 600; }
         .info-block { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.9rem; line-height: 1.6; }
         .info-block strong { color: #333; }
 
@@ -477,7 +481,7 @@ function openDiff(id) {
         const allKeys = [...new Set([...Object.keys(log.old_values), ...Object.keys(log.new_values)])];
         html += `<h4 style="margin-bottom:10px;color:#333;">Alterações (antes → depois):</h4>
         <table class="diff-table">
-            <thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead>
+            <thead><tr><th>Campo</th><th class="th-old">🔴 Antes</th><th class="th-new">🟢 Depois</th></tr></thead>
             <tbody>`;
         allKeys.forEach(key => {
             const oldVal = log.old_values[key] ?? '—';
@@ -485,8 +489,8 @@ function openDiff(id) {
             const changed = String(oldVal) !== String(newVal);
             html += `<tr>
                 <td><strong>${escHtml(key)}</strong></td>
-                <td class="${changed ? 'diff-old' : ''}">${escHtml(String(oldVal))}</td>
-                <td class="${changed ? 'diff-new' : ''}">${escHtml(String(newVal))}</td>
+                <td class="col-old ${changed ? 'diff-old' : ''}">${escHtml(String(oldVal))}</td>
+                <td class="col-new ${changed ? 'diff-new' : ''}">${escHtml(String(newVal))}</td>
             </tr>`;
         });
         html += `</tbody></table>`;
